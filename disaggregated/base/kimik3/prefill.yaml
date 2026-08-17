@@ -1,4 +1,4 @@
-# Kimi-K3 decode on 8xB200 nodes.
+# Kimi-K3 prefill on 8xB200 nodes.
 #
 # Cluster-agnostic: RDMA plumbing, node placement, and the node-local weight
 # cache all come from a cluster overlay -- ../../overlays/gke/kimik3 pulls in the
@@ -14,7 +14,7 @@
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
-  name: kimi-k3-decode
+  name: kimi-k3-prefill
   # These have to agree with the workerTemplate's labels below and with the
   # router's modelServers.matchLabels -- the overlays select on kind alone, but
   # the EPP finds pods by `llm-d.ai/guide`.
@@ -224,22 +224,11 @@ spec:
               periodSeconds: 30
               timeoutSeconds: 5
               failureThreshold: 3
-        # Pod-level, not container-level: these were nested under the vllm
-        # container, where the kubelet would have rejected them -- and where
-        # components/gke-node-cache could not find hf-cache at
-        # .../spec/volumes/1 to repoint it.
-        #
-        # The order [dshm, hf-cache, jit-cache] is load-bearing: that component
-        # addresses hf-cache by index (JSON 6902 cannot match a list entry by
-        # name) and `test`s the name before replacing it, so reordering this list
-        # fails the build rather than silently repointing the wrong volume.
         volumes:
-          # 20Gi, not the 2Gi an aggregated deployment gets by: NIXL/UCX stages
-          # the P/D KV transfers through shared memory.
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 20Gi
+              sizeLimit: 8Gi
           # Per-pod scratch by default; a cluster overlay with node-local SSD
           # repoints hf-cache at it so the weights are pulled once per node
           # rather than once per pod.

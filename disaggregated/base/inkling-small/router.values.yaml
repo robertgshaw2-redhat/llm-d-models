@@ -1,15 +1,5 @@
-# Values for the llm-d EPP / InferencePool router in front of the disaggregated
-# prefill+decode pods in inkling-small-pd.yaml (applied through
-# overlays/coreweave/inkling-small). Cluster-agnostic, and a Helm values file
-# rather than a manifest, so the kustomization does not list it.
-#
 # Deploy:
-#   helm upgrade --install inkling-small oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n robshaw-dev -f disaggregated/base/inkling-small/router.values.yaml
-#
-# The release name drives the resource names: this creates the InferencePool
-# `inkling-small` and the Service/Deployment `inkling-small-epp`, so the routed
-# endpoint is http://inkling-small-epp:80 (the extraServicePorts 80->8081 map
-# below). Uninstall with `helm uninstall inkling-small -n robshaw-dev`.
+#   helm upgrade --install inkling-small oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n $NAMESPACE -f disaggregated/base/inkling-small/router.values.yaml
 router:
   epp:
     replicas: 1
