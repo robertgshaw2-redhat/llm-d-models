@@ -45,7 +45,8 @@ spec:
         # (components/gke-placement).
         containers:
           - name: vllm
-            image: docker.io/vllm/vllm-openai:nightly
+            # image: docker.io/vllm/vllm-openai:nightly
+            image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:b24e5a9cbeb1223ec76c21be7f9aa4571f6d24bf
             imagePullPolicy: Always
             command:
               - /bin/bash
@@ -73,6 +74,18 @@ spec:
                     || pip install --no-cache-dir nixl nixl-cu13)
                 fi
 
+                # The image also has no `ibstat` (infiniband-diags), so the RDMA
+                # link-speed probe logs "Failed to get RDMA connection speed" on
+                # every worker. Cosmetic -- the verbs path does not go through
+                # ibstat -- but it is a ~2MB package. Non-fatal so a cluster
+                # without apt egress still starts. Set BOOTSTRAP_IB_DIAGS=0 once
+                # the image ships it.
+                if [[ "${BOOTSTRAP_IB_DIAGS}" == "1" ]] && ! command -v ibstat >/dev/null; then
+                  (apt-get update -qq \
+                    && apt-get install -y -qq --no-install-recommends infiniband-diags) \
+                    || echo "WARN: infiniband-diags install failed; ibstat stays missing"
+                fi
+
                 exec vllm serve "${MODEL}" \
                   --port 8200 \
                   --trust-remote-code \
@@ -98,7 +111,9 @@ spec:
                         "kv_load_failure_policy":"fail"}' \
                   --kv-cache-dtype fp8 \
                   --attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}' \
-                  --load-format instanttensor
+                  --max-cudagraph-capture-size "${MAX_SEQS}" \
+                  --no-enable-flashinfer-autotune \
+                  --enforce-eager
 
             env:
               - name: MODEL
@@ -110,13 +125,15 @@ spec:
               - name: MAX_SEQS
                 value: "8"
               - name: MAX_BATCHED_TOKENS
-                value: "16384"
+                value: "8192"
               - name: LONG_PREFILL_TOKEN_THRESHOLD
-                value: "4096"
+                value: "1024"
               - name: SPEC_TOKENS
-                value: "1"
+                value: "3"
               - name: BOOTSTRAP_NIXL
-                value: "0"
+                value: "1"
+              - name: BOOTSTRAP_IB_DIAGS
+                value: "1"
               - name: HF_TOKEN
                 valueFrom:
                   secretKeyRef:
@@ -127,7 +144,7 @@ spec:
               - name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE
                 value: "120"
               - name: VLLM_LOGGING_LEVEL
-                value: INFO
+                value: "INFO"
               - name: VLLM_SKIP_P2P_CHECK
                 value: "1"
               - name: VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS
