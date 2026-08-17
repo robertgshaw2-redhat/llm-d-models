@@ -17,6 +17,10 @@
 # The GuideLLM *Pride and Prejudice* recipes live at the bottom of this file:
 #   just pride-dataset     # once per cluster: PVC + build the prompt JSONL
 #   just pride-sweep       # sweep concurrency, one Job at a time
+#
+# Correctness rather than load, at the very bottom:
+#   just bfcl              # BFCL tool-call eval (multi_turn) against the endpoint
+#   just bfcl live_simple  # a cheaper category
 
 # namespace / model / url can be overridden from the environment, e.g.
 #   NAMESPACE=other-ns MODEL=Qwen/Qwen3-32B URL=http://qwen3-svc:8000 just run 16
@@ -324,3 +328,70 @@ pride-jobs:
 # Delete every GuideLLM Job in the namespace. Local logs are untouched.
 pride-clean:
     kubectl delete job -n {{namespace}} -l app.kubernetes.io/name=guidellm --ignore-not-found
+
+# ---------------------------------------------------------------------------
+# BFCL tool-call correctness (benchmarks/bfcl-job.yaml)
+#
+# Not a load test: this measures whether the deployment emits *correct* tool
+# calls, which is the thing an AgentX-style throughput number says nothing
+# about. Ported from vLLM's .buildkite/scripts/tool_call/run-bfcl-eval.sh, but
+# aimed at the already-running `url` endpoint above instead of a vLLM server the
+# script starts itself.
+#
+#   just bfcl                       # multi_turn against `url`
+#   just bfcl live_simple           # one cheaper category
+#   just bfcl "simple,multiple" 16  # several categories, 16 threads
+#   just bfcl-jobs / just bfcl-clean
+#
+# The endpoint must already be served with --enable-auto-tool-choice and a
+# --tool-call-parser that matches the model, and `model` must be the id
+# /v1/models reports -- the Job's preflight check fails fast on both.
+# ---------------------------------------------------------------------------
+
+bfcl_log_dir  := "./results-bfcl"
+# multi_turn is the full stateful suite and the slowest; the wall clock below is
+# for the Job's pod once it is running, not the queue wait.
+bfcl_category := env_var_or_default("BFCL_CATEGORY", "multi_turn")
+bfcl_threads  := env_var_or_default("BFCL_THREADS", "8")
+bfcl_timeout  := "240m"
+
+# BFCL tool-call eval as a Job. Args: [test-category(,...)] [threads].
+bfcl test_category=bfcl_category threads=bfcl_threads:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    mkdir -p "{{bfcl_log_dir}}"
+    # Categories can be a comma-separated list; keep it out of the filename.
+    slug=$(echo "{{test_category}}" | tr -c 'A-Za-z0-9_' '-')
+    log="{{bfcl_log_dir}}/bfcl-${slug}-t{{threads}}.log"
+    echo "==> CATEGORY={{test_category}} THREADS={{threads}} MODEL={{model}} URL={{url}}/v1 -> $log"
+
+    # generateName, so each create gets a fresh Job rather than colliding.
+    job=$(
+      kubectl create -f benchmarks/bfcl-job.yaml --dry-run=client -o yaml \
+        | kubectl set env --local -f - -o yaml \
+            "BASE_URL={{url}}/v1" "MODEL={{model}}" \
+            "TEST_CATEGORY={{test_category}}" "NUM_THREADS={{threads}}" \
+        | kubectl create -n {{namespace}} -f - -o name
+    )
+    echo "==> created $job"
+
+    kubectl wait -n {{namespace}} --for=condition=Ready pod \
+      --selector="job-name=${job#job.batch/}" --timeout=10m || true
+
+    # tee rather than redirect: /results is an emptyDir, so the score tables at
+    # the end of this log are the only copy that outlives the pod.
+    kubectl logs -n {{namespace}} -f "$job" 2>&1 | tee "$log"
+
+    # `logs -f` returns when the stream closes, which is not the same as the Job
+    # having been recorded complete.
+    kubectl wait -n {{namespace}} --for=condition=complete --timeout={{bfcl_timeout}} "$job" \
+      || { echo "!! $job did not complete -- see $log"; exit 1; }
+
+bfcl-jobs:
+    kubectl get jobs -n {{namespace}} -l app.kubernetes.io/name=bfcl
+    kubectl get pods -n {{namespace}} -l app.kubernetes.io/name=bfcl
+
+# Delete every BFCL Job in the namespace. Local logs are untouched.
+bfcl-clean:
+    kubectl delete job -n {{namespace}} -l app.kubernetes.io/name=bfcl --ignore-not-found

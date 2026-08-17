@@ -1,0 +1,305 @@
+# BFCL (Berkeley Function Call Leaderboard) tool-calling correctness eval, run
+# as a Job against an endpoint that is *already serving* -- the llm-d router (or
+# a vLLM Service) in this namespace.
+#
+#   kubectl create -f bfcl-job.yaml
+#   kubectl logs -f job/<generated-name>
+#
+# Uses generateName, so every `kubectl create -f` gets a fresh Job. The knobs
+# below are substituted per-run without editing this file (what `just bfcl`
+# does):
+#
+#   kubectl create -f benchmarks/bfcl-job.yaml --dry-run=client -o yaml \
+#     | kubectl set env --local -f - -o yaml \
+#         BASE_URL=http://inkling-large-epp:80/v1 \
+#         MODEL=thinkingmachines/Inkling-NVFP4 \
+#         TEST_CATEGORY=multi_turn \
+#     | kubectl create -f -
+#
+# Ported from vLLM's .buildkite/scripts/tool_call/run-bfcl-eval.sh, with the
+# half that matters here changed: that script starts its own `vllm serve` on
+# localhost and tears it down afterwards, while this Job points BFCL at an
+# existing endpoint over in-cluster DNS and never touches the server. Two
+# consequences:
+#
+#   * The serving flags the upstream script passes (--enable-auto-tool-choice,
+#     --tool-call-parser, --reasoning-parser) are *not* set here. They belong to
+#     the Deployment being measured -- an endpoint serving without a tool-call
+#     parser returns tool calls as prose and scores near zero, which looks like
+#     a model failure rather than a misconfiguration. Check the served args
+#     before believing a bad number.
+#   * MODEL must be the id the endpoint actually serves (what `/v1/models`
+#     returns), because it is sent verbatim as the request body's "model". The
+#     preflight check below fails the Job early when it is not in the list,
+#     rather than letting every one of the ~2000 requests 404.
+#
+# bfcl-eval ships its own datasets, so the only egress needed is PyPI for the
+# install. Results are written to an emptyDir and die with the pod; the score
+# tables printed at the end of the log are the durable artifact. Point the
+# `results` volume at a PVC if you need the raw generations.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: bfcl-
+  labels:
+    app.kubernetes.io/name: bfcl
+    app.kubernetes.io/component: eval
+spec:
+  # An eval that dies should not silently re-run and report half a category.
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  # multi_turn at 8 threads is roughly an hour against a healthy endpoint;
+  # anything past this is a hung request, not a slow one.
+  activeDeadlineSeconds: 14400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bfcl
+        app.kubernetes.io/component: eval
+    spec:
+      restartPolicy: Never
+      # The eval driver needs no GPU, but the only nodes with spare CPU/memory
+      # in these clusters are the GPU pools, which are tainted. Both tolerations
+      # are no-ops on a pool that doesn't carry the matching taint.
+      tolerations:
+        # GKE GPU node pools (nvidia.com/gpu=present:NoSchedule).
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        # CoreWeave GPU nodes (is_gpu=true:PreferNoSchedule).
+        - key: is_gpu
+          operator: Equal
+          value: "true"
+          effect: PreferNoSchedule
+      containers:
+        - name: bfcl
+          # Plain CPython: bfcl-eval is pulled at start-up rather than baked in,
+          # so the pinned range below is the only thing deciding the version.
+          # The non-slim image on purpose -- a few of bfcl-eval's transitive
+          # deps still fall back to an sdist and need a compiler.
+          image: python:3.12
+          imagePullPolicy: IfNotPresent
+          workingDir: /results
+          env:
+            # OpenAI-compatible base URL of the endpoint under test, including
+            # the /v1. In-cluster DNS, no trailing slash.
+            - name: BASE_URL
+              value: http://inkling-large-epp:80/v1
+            # Must match what the endpoint serves -- sent as the request body's
+            # "model" and used as the BFCL result directory name.
+            - name: MODEL
+              value: thinkingmachines/Inkling-NVFP4
+            # "chat_completions" or "responses".
+            - name: API_TYPE
+              value: chat_completions
+            # Comma-separated BFCL categories, e.g.
+            # "live_simple,multiple,parallel_multiple". multi_turn is the
+            # stateful one and the slowest.
+            - name: TEST_CATEGORY
+              value: multi_turn
+            # Parallel BFCL worker threads, i.e. concurrent requests at the
+            # endpoint. Correctness, not throughput -- raise it to finish
+            # sooner, but keep it below what the deployment serves comfortably
+            # so timeouts don't get scored as wrong answers.
+            - name: NUM_THREADS
+              value: "8"
+            # Greedy, so a re-run of the same model reproduces its score.
+            - name: TEMPERATURE
+              value: "0.0"
+            - name: OUTPUT_DIR
+              value: /results
+            - name: BFCL_VERSION
+              value: bfcl-eval>=2025.10.20.1,<2026
+            # BFCL only talks to our endpoint, but its handler is the OpenAI
+            # client, which insists on a key being set.
+            - name: OPENAI_API_KEY
+              value: dummy
+            - name: PIP_ROOT_USER_ACTION
+              value: ignore
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              echo "============================================"
+              echo "BFCL tool-call correctness"
+              echo "============================================"
+              echo "Endpoint:       $BASE_URL"
+              echo "Model:          $MODEL"
+              echo "API type:       $API_TYPE"
+              echo "Test category:  $TEST_CATEGORY"
+              echo "Num threads:    $NUM_THREADS"
+              echo "Temperature:    $TEMPERATURE"
+              echo "Output dir:     $OUTPUT_DIR"
+              echo "============================================"
+
+              mkdir -p "$OUTPUT_DIR"
+
+              if ! python3 -c "import bfcl_eval" 2>/dev/null; then
+                  echo "==> installing $BFCL_VERSION"
+                  pip install --no-cache-dir "$BFCL_VERSION"
+              fi
+
+              # Preflight: fail in seconds on an unreachable endpoint or a
+              # mismatched model id, rather than after a full generate pass of
+              # 404s that BFCL happily scores as wrong answers.
+              python3 - <<'PYEOF'
+              import json
+              import os
+              import sys
+              import time
+              import urllib.error
+              import urllib.request
+
+              base_url = os.environ["BASE_URL"].rstrip("/")
+              model = os.environ["MODEL"]
+              deadline = time.monotonic() + 600
+
+              while True:
+                  try:
+                      with urllib.request.urlopen(f"{base_url}/models", timeout=10) as response:
+                          served = [entry["id"] for entry in json.load(response)["data"]]
+                      break
+                  except (urllib.error.URLError, OSError, KeyError, ValueError) as error:
+                      if time.monotonic() >= deadline:
+                          sys.exit(f"!! {base_url}/models unreachable after 600s: {error}")
+                      print(f"  waiting for {base_url} ({error})", flush=True)
+                      time.sleep(5)
+
+              print(f"==> endpoint serves: {served}", flush=True)
+              if model not in served:
+                  sys.exit(
+                      f"!! MODEL={model} is not served at {base_url}; "
+                      f"every request would 404. Set MODEL to one of {served}."
+                  )
+              PYEOF
+
+              # bfcl-eval has no CLI entry point -- generate() and evaluate()
+              # are Typer callables -- and its MODEL_CONFIG_MAPPING has to be
+              # patched in-process so our model id resolves to the
+              # OpenAI-compatible handler pointed at BASE_URL.
+              python3 - <<'PYEOF'
+              import os
+
+              model = os.environ["MODEL"]
+              test_category = [c.strip() for c in os.environ["TEST_CATEGORY"].split(",") if c.strip()]
+              num_threads = int(os.environ["NUM_THREADS"])
+              temperature = float(os.environ["TEMPERATURE"])
+              output_dir = os.environ["OUTPUT_DIR"]
+
+              # Read by the OpenAI client inside the handler; this is the only
+              # thing aiming BFCL at our endpoint instead of api.openai.com.
+              os.environ["OPENAI_BASE_URL"] = os.environ["BASE_URL"].rstrip("/")
+              os.environ.setdefault("OPENAI_API_KEY", "dummy")
+              # Where BFCL writes result/ and score/.
+              os.environ["BFCL_PROJECT_ROOT"] = output_dir
+
+              import bfcl_eval.constants.model_config as bfcl_model_config
+              from bfcl_eval.constants.model_config import ModelConfig
+              from bfcl_eval.model_handler.api_inference.openai_completion import (
+                  OpenAICompletionsHandler,
+              )
+              from bfcl_eval.model_handler.api_inference.openai_response import (
+                  OpenAIResponsesHandler,
+              )
+
+              if os.environ["API_TYPE"] == "responses":
+                  handler = OpenAIResponsesHandler
+              else:
+                  handler = OpenAICompletionsHandler
+
+              bfcl_model_config.MODEL_CONFIG_MAPPING[model] = ModelConfig(
+                  model_name=model,
+                  display_name=f"{model} (FC) (llm-d)",
+                  url=f"https://huggingface.co/{model}",
+                  org="",
+                  license="apache-2.0",
+                  model_handler=handler,
+                  input_price=None,
+                  output_price=None,
+                  is_fc_model=True,
+                  underscore_to_dot=True,
+              )
+
+              import inspect
+
+              import typer
+              from bfcl_eval.__main__ import evaluate, generate
+
+
+              def defaults_for(function):
+                  """generate/evaluate are Typer commands, so their defaults are
+                  OptionInfo objects rather than values; calling them as plain
+                  functions means unwrapping every one."""
+                  kwargs = {}
+                  for name, parameter in inspect.signature(function).parameters.items():
+                      if parameter.default is inspect.Parameter.empty:
+                          continue
+                      default = parameter.default
+                      if isinstance(default, typer.models.OptionInfo):
+                          default = default.default
+                      kwargs[name] = default
+                  return kwargs
+
+
+              print(f"=== BFCL generate: model={model} test_category={test_category} ===", flush=True)
+              gen_kwargs = defaults_for(generate)
+              gen_kwargs["model"] = [model]
+              gen_kwargs["test_category"] = test_category
+              # The endpoint is already up and is not ours to manage.
+              gen_kwargs["skip_server_setup"] = True
+              gen_kwargs["num_threads"] = num_threads
+              gen_kwargs["temperature"] = temperature
+              generate(**gen_kwargs)
+
+              print(f"=== BFCL evaluate: model={model} test_category={test_category} ===", flush=True)
+              eval_kwargs = defaults_for(evaluate)
+              eval_kwargs["model"] = [model]
+              eval_kwargs["test_category"] = test_category
+              evaluate(**eval_kwargs)
+
+              print("=== BFCL evaluation completed ===", flush=True)
+              PYEOF
+
+              # /results is an emptyDir, so anything not printed here is lost
+              # when the pod goes away.
+              echo "==> scores"
+              python3 - <<'PYEOF'
+              import os
+              import pathlib
+
+              score_root = pathlib.Path(os.environ["OUTPUT_DIR"]) / "score"
+              if not score_root.is_dir():
+                  print(f"!! no score directory at {score_root}")
+              else:
+                  for path in sorted(score_root.rglob("*")):
+                      if not path.is_file():
+                          continue
+                      print(f"--- {path}")
+                      if path.suffix == ".csv":
+                          print(path.read_text().rstrip())
+                      else:
+                          # BFCL puts the category summary on line 1 and one
+                          # failed entry per line after it.
+                          with path.open() as handle:
+                              print(handle.readline().rstrip())
+              PYEOF
+          resources:
+            limits:
+              cpu: "8"
+              memory: 16Gi
+            requests:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: results
+              mountPath: /results
+      volumes:
+        # Holds the pip install's scratch plus BFCL's result/ and score/ trees.
+        - name: results
+          emptyDir:
+            sizeLimit: 10Gi
