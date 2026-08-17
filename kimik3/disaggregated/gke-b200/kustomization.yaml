@@ -1,0 +1,31 @@
+# GKE layer over the portable Kimi-K3 P/D base in ../base.
+#
+# Identical to ../../../inkling-large/disaggregated/gke-b200 except for the one
+# `resources:` line -- which is the entire point of the components refactor. The
+# cluster facts live in ../../../components/ and are shared by every model and by
+# the aggregated overlays:
+#   gke-rdma-networking  the eight per-GPU RoCE NICs (annotations + resources)
+#   gke-node-cache       weights on the node's ephemeral SSD
+#   gke-placement        B200 nodeSelector + GCE topology packing
+#
+#   kubectl config use-context gke_llm-d-scale_us-west8_wide-ep-cluster-us-west8
+#   kubectl apply -k kimik3/disaggregated/gke-b200 -n default
+#   kubectl kustomize kimik3/disaggregated/gke-b200   # render only
+#
+# Warm the node caches first with ../../../cache-warmer/overlays/gke. A decode
+# group here is two B200 nodes (DP=2, EP=16), and it competes for the same pool as
+# ../../../inkling-large/disaggregated/gke-b200 -- scale that to 0 before
+# applying this.
+#
+# A tweak that really is specific to Kimi-K3 on GKE goes in a `patches:` block
+# here; anything cluster-wide belongs in a component so the other models get it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+components:
+  - ../../../components/gke-rdma-networking
+  - ../../../components/gke-node-cache
+  - ../../../components/gke-placement

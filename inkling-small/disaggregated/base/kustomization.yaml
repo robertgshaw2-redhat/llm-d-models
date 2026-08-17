@@ -1,0 +1,13 @@
+# Cluster-agnostic disaggregated (prefill + decode) Inkling Small deployment.
+#
+# Everything here is model/serving configuration: it should apply to any cluster
+# with H200-class GPUs and no CoreWeave-specific assumptions. Node-local NVMe
+# cache paths and InfiniBand plumbing live in ../cks-h200.
+#
+# Do not apply this directly -- pick an overlay:
+#   kubectl apply -k inkling-small/disaggregated/cks-h200 -n robshaw-dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - inkling-small-pd.yaml

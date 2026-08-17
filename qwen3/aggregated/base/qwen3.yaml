@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3
+  labels:
+    llm-d.ai/role: decode
+    llm-d.ai/model: qwen3
+    llm-d.ai/guide: qwen3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      llm-d.ai/role: decode
+      llm-d.ai/model: qwen3
+      llm-d.ai/guide: qwen3
+  template:
+    metadata:
+      labels:
+        llm-d.ai/role: decode
+        llm-d.ai/model: qwen3
+        llm-d.ai/guide: qwen3
+    spec:
+      containers:
+        - name: modelserver
+          image: vllm/vllm-openai:nightly
+          imagePullPolicy: Always
+          command: ["vllm", "serve"]
+          args:
+            - 'Qwen/Qwen3-4B-Thinking-2507'
+            - '--tensor-parallel-size=1'
+            - '--max-model-len=260000'
+          ports:
+            - name: modelserver
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: VLLM_USE_V2_MODEL_RUNNER
+              value: "1"
+            - name: FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED
+              value: "1"
+            - name: TORCH_CPP_LOG_LEVEL
+              value: "ERROR"
+            # Cache locations, mounted from the `hf-cache` / `jit-cache` volumes
+            # below. Base backs those with emptyDir; see ../cks-h200 for
+            # the node-local NVMe variant.
+            - name: HF_HUB_CACHE
+              value: /var/cache/huggingface
+            - name: VLLM_CACHE_ROOT
+              value: /var/cache/vllm/vllm
+            - name: FLASHINFER_WORKSPACE_BASE
+              value: /var/cache/vllm/flashinfer
+            - name: DO_NOT_TRACK
+              value: "1"
+          resources:
+            limits:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: 2
+            requests:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: 2
+          volumeMounts:
+            - mountPath: /var/cache/huggingface
+              name: hf-cache
+            - mountPath: /var/cache/vllm
+              name: jit-cache
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /.config
+              name: vllm-config
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            # 60min — covers a cold weight pull. Pods that find a warm cache
+            # come up far faster.
+            failureThreshold: 120
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        # Per-pod scratch by default; ../cks-h200 repoints these at
+        # node-local NVMe.
+        - name: hf-cache
+          emptyDir: {}
+        - name: jit-cache
+          emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        - name: vllm-config
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-svc
+  labels:
+    llm-d.ai/model: qwen3
+spec:
+  selector:
+    llm-d.ai/role: decode
+    llm-d.ai/model: qwen3
+    llm-d.ai/guide: qwen3
+  ports:
+    - name: http
+      port: 8000
+      targetPort: modelserver
+      protocol: TCP

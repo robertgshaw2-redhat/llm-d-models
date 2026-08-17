@@ -1,0 +1,33 @@
+# GKE layer over the portable P/D pair in ../base.
+#
+# There is nothing model-specific left in here, which is the point: every
+# cluster fact lives in a component under ../../../components/ and is shared
+# with the other models' gke-b200 overlays (../../../kimik3/disaggregated/) and
+# with ../../aggregated/gke-b200.
+#   gke-rdma-networking  the eight per-GPU RoCE NICs (annotations + resources)
+#   gke-node-cache       weights on the node's ephemeral SSD
+#   gke-placement        B200 nodeSelector + GCE topology packing
+#
+#   kubectl config use-context gke_llm-d-scale_us-west8_wide-ep-cluster-us-west8
+#   kubectl apply -k inkling-large/disaggregated/gke-b200 -n default
+#   kubectl kustomize inkling-large/disaggregated/gke-b200   # render only
+#
+# Warm the node caches first with ../../../cache-warmer/overlays/gke, whose
+# hostPath has to match the one in components/gke-node-cache. The nodes have to
+# be freed before this will schedule; scale the other B200 workloads to 0 first.
+#
+# The EPP/InferencePool router in front of these pods is a Helm release, not part
+# of this kustomization -- see ../base/router.values.yaml.
+#
+# A tweak that really is specific to this model on this cluster goes in a
+# `patches:` block here, not in a component.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+components:
+  - ../../../components/gke-rdma-networking
+  - ../../../components/gke-node-cache
+  - ../../../components/gke-placement
