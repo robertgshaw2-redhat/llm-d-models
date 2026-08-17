@@ -113,7 +113,8 @@ spec:
                   --attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}' \
                   --max-cudagraph-capture-size "${MAX_SEQS}" \
                   --no-enable-flashinfer-autotune \
-                  --enforce-eager
+                  --enforce-eager \
+                  --prefix-match-unit 32
 
             env:
               - name: MODEL
@@ -125,7 +126,7 @@ spec:
               - name: MAX_SEQS
                 value: "8"
               - name: MAX_BATCHED_TOKENS
-                value: "16384"
+                value: "8192"
               - name: LONG_PREFILL_TOKEN_THRESHOLD
                 value: "4096"
               - name: SPEC_TOKENS

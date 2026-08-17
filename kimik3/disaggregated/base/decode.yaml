@@ -139,7 +139,8 @@ spec:
                         "kv_load_failure_policy":"fail"}' \
                   --kv-cache-dtype fp8 \
                   --attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"flashinfer"}' \
-                  --no-enable-flashinfer-autotune
+                  --no-enable-flashinfer-autotune \
+                  --prefix-match-unit 32
 
             env:
               - name: MODEL
