@@ -1,0 +1,15 @@
+# Cluster-agnostic aggregated (prefill+decode in one engine) Inkling Large
+# deployment -- `thinkingmachines/Inkling-NVFP4` across two 8xB200 nodes, 16
+# GPUs total -- plus its smoke-test Service.
+#
+# Everything here is model/serving configuration: it should apply to any cluster
+# with B200-class nodes and an RDMA fabric. What the fabric is called and how a
+# pod gets onto it is the overlay's business.
+#
+# Do not apply this directly -- pick an overlay:
+#   kubectl apply -k inkling-large/aggregated/gke-b200 -n default
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - inkling-large.yaml

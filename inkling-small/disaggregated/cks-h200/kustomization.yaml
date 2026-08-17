@@ -1,0 +1,26 @@
+# CoreWeave-specific layer over the portable P/D deployment in ../base.
+#
+# Two things are cluster-specific here and nothing else, and both are shared
+# components rather than local files, so this overlay works for any
+# Deployment-based model base:
+#   coreweave-node-cache  node-local NVMe at /mnt/local for the HF weight and
+#                         JIT kernel caches (shared with ../../aggregated/cks-h200)
+#   coreweave-infiniband  the rdma/ib extended resource + NCCL_IB_HCA
+#
+#   kubectl apply -k inkling-small/disaggregated/cks-h200 -n robshaw-dev
+#   kubectl kustomize inkling-small/disaggregated/cks-h200   # render only
+#
+# The EPP/InferencePool router in front of these pods is a Helm release, not part
+# of this kustomization -- see ../base/router.values.yaml.
+# Warm the node caches first with ../../../cache-warmer/overlays/coreweave.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+# The /mnt/local path has to match the aggregated overlays' for the node cache to
+# actually be shared, which is why it is written down once, in the component.
+components:
+  - ../../../components/coreweave-node-cache
+  - ../../../components/coreweave-infiniband

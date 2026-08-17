@@ -6,10 +6,10 @@
 # disaggregated alike, must agree on the path for cache-warmer.yaml to be worth
 # running.
 #
-# Used by aggregated/overlays/coreweave/* and disaggregated/overlays/coreweave/*.
+# Used by the cks-h200 overlays under each model.
 # Pull it into an overlay with:
 #   components:
-#     - ../../../../components/coreweave-node-cache
+#     - ../../../components/coreweave-node-cache
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

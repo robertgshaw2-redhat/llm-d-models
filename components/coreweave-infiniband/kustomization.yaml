@@ -3,8 +3,8 @@
 # Model-agnostic, like ../coreweave-node-cache, and used the same way -- the two
 # are the only cluster-specific facts a CoreWeave overlay needs:
 #   components:
-#     - ../../../../components/coreweave-node-cache
-#     - ../../../../components/coreweave-infiniband
+#     - ../../../components/coreweave-node-cache
+#     - ../../../components/coreweave-infiniband
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
