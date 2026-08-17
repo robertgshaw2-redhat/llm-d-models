@@ -1,54 +1,17 @@
 # AIPerf AgentX-MVP benchmark against the running llm-d optimized-baseline deployment.
 #
-# Usage:
-#   just deploy            # apply the manifest and wait for the pod
-#   just check             # confirm the runner can reach the model endpoint
-#   just run               # run the full AgentX-MVP benchmark (default 1800s)
-#   just run 16 900        # override concurrency / duration
-#   just smoke             # fast plumbing test (~60s, marks result invalid)
-#   just results           # copy artifacts out to ./results
-#   just logs / just shell # inspect the runner
-#   just clean             # delete the runner
-#   just lmeval            # run lm-eval (gsm8k) at 100 concurrency via the lm-eval pod
-#   just lmeval mmlu 50    # override tasks / concurrency
-#   just bench             # vllm bench serve, 10k ISL / 1 OSL, from inside the inkling pod
-#   just bench 32 128      # override concurrency / prompt count
-#
-# The GuideLLM *Pride and Prejudice* recipes live at the bottom of this file:
-#   just pride-dataset     # once per cluster: PVC + build the prompt JSONL
-#   just pride-sweep       # sweep concurrency, one Job at a time
 
-# namespace / model / url can be overridden from the environment, e.g.
-#   NAMESPACE=other-ns MODEL=Qwen/Qwen3-32B URL=http://qwen3-svc:8000 just run 16
 namespace := env_var_or_default("NAMESPACE", "default")
 deploy    := "aiperf-agentx"
-# Must match what the vLLM pods actually serve (inkling-small/aggregated/base/) and the
-# token-producer modelName in router.values.yaml.
-model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
-# MODEL=Qwen/Qwen3-4B-Thinking-2507
-# MODEL=nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8
-# MODEL=Qwen/Qwen3-32B
-# inkling-small-svc from inkling-small/aggregated/base/ -- direct to the pods,
-# bypassing EPP scheduling. Plain HTTP in-cluster, resolves from any pod in
-# {{namespace}}. No trailing slash.
-# url       := env_var_or_default("URL", "http://inkling-large-agg-svc:8000")
-url := env_var_or_default("URL", "http://inkling-large-epp:80")
-# URL=http://qwen3-svc:8000
-# URL=http://inkling-small-epp
-# Through the EPP/InferencePool instead, so the prefix-cache/token-load scorers
-# apply. Swap this in to benchmark the routed path -- but the router chart isn't
-# installed yet, so confirm the service name/port before trusting this
-# (`helm install inkling-small ...` per router.values.yaml, which maps 80->8081).
-# URL=http://inkling-small-epp:80
-# duration    := "10"
-duration    := "900"
+model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
+url       := env_var_or_default("URL", "http://kimik3-epp:80")
+duration  := "300"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-inkling_deploy := "inkling-small"
-inkling_model  := "thinkingmachines/Inkling-Small"
+deployment := "inkling-small"
 
 default:
     @just --list
@@ -96,6 +59,7 @@ smoke concurrency:
         --endpoint-type chat \
         --streaming \
         --use-server-token-count \
+        --tokenizer-trust-remote-code \
         --public-dataset semianalysis_cc_traces_weka_with_subagents \
         --concurrency {{concurrency}} \
         --benchmark-duration {{duration}} \
@@ -126,7 +90,7 @@ lmeval limit="1300" concurrency="100":
     kubectl exec -n {{namespace}} deploy/{{deploy}} -- \
         lm_eval \
             --model local-completions \
-            --model_args "model={{model}},base_url={{url}}/v1/completions,num_concurrent={{concurrency}},tokenized_requests=False" \
+            --model_args "model={{model}},base_url={{url}}/v1/completions,num_concurrent={{concurrency}},tokenized_requests=False,trust_remote_code=True" \
             --tasks gsm8k --limit {{limit}} --num_fewshot 20
 
 install-lmeval:
@@ -151,11 +115,11 @@ bench concurrency="16" num_prompts="":
     num_prompts="{{num_prompts}}"
     if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 10 )); fi
     echo "==> ISL=10000 OSL=1 CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
-    kubectl exec -n {{namespace}} deploy/{{inkling_deploy}} -- \
+    kubectl exec -n {{namespace}} deploy/{{deploy}} -- \
       vllm bench serve \
         --backend vllm \
         --base-url http://localhost:8000 \
-        --model {{inkling_model}} \
+        --model {{model}} \
         --trust-remote-code \
         --dataset-name random \
         --random-input-len 10000 \

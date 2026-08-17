@@ -1,0 +1,75 @@
+
+# Deploy:
+#   helm upgrade --install kimik3 oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f kimik3/disaggregated/router.values.yaml
+router:
+  epp:
+    replicas: 1
+    flags:
+      ha-enable-leader-election: false
+
+    # The default pool is too small to fit the EPP, so let it land on a GPU
+    # node instead of going Pending.
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+    env:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: llm-d-hf-token
+            key: HF_TOKEN
+
+    pluginsConfigFile: "plugins.yaml"
+    pluginsCustomConfig:
+      plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+          - type: disagg-headers-handler
+          - type: always-disagg-pd-decider
+          - type: disagg-profile-handler
+            parameters:
+              deciderPluginName: always-disagg-pd-decider
+          - type: prefill-filter
+          - type: decode-filter
+          - type: approx-prefix-cache-producer
+          - type: inflight-load-producer
+          - type: prefix-cache-affinity-filter
+            parameters:
+              peakPrefillThroughput: 20000
+          - type: token-load-scorer
+          - type: active-request-scorer
+          - type: max-score-picker
+        schedulingProfiles:
+        # Prefill does the prompt pass: keep prefix groups on cache-warm pods
+        # (affinity filter) and pick by queued prefill token load.
+        - name: prefill
+          plugins:
+          - pluginRef: prefill-filter
+          - pluginRef: prefix-cache-affinity-filter
+          - pluginRef: token-load-scorer
+          - pluginRef: max-score-picker
+        # Decode is bound by concurrent in-flight requests, not prefill
+        # throughput: pick the least-busy endpoint.
+        - name: decode
+          plugins:
+          - pluginRef: decode-filter
+          - pluginRef: active-request-scorer
+          - pluginRef: max-score-picker
+
+  extraServicePorts:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+
+  modelServers:
+    type: vllm
+    targetPorts:
+      # 8000 on both roles: vLLM directly on prefill, the routing-proxy sidecar
+      # on decode (vLLM itself sits on 8200 there).
+      - number: 8000
+    matchLabels:
+      llm-d.ai/guide: "kimi-k3-pd"
