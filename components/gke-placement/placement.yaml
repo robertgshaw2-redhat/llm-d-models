@@ -1,0 +1,49 @@
+# Where the pods of an LWS group land on this cluster.
+#
+# nodeSelector picks the B200 pool by GKE's accelerator label. The podAffinity
+# keeps the pods of one group inside a GCE topology block, and preferably a
+# subblock, so an inter-node all2all stays on the short paths.
+#
+# `matchLabelKeys: [leaderworkerset.sigs.k8s.io/group-key]` is what makes this
+# per-group *and* what makes it model-agnostic: LWS stamps a key on every group's
+# pods that is unique to that group of that LeaderWorkerSet, and the scheduler
+# ANDs it into the labelSelector. So a pod is drawn toward its own group's pods
+# and nothing else -- not toward the other role, not toward another model, not
+# toward another replica of itself. The earlier per-role copies of this file
+# spelled out `llm-d.ai/role` and `llm-d.ai/model` in matchLabels, which the
+# group-key already implies; dropping them is what collapses prefill, decode, and
+# the aggregated single-role case into this one file.
+#
+# `llm-d.ai/inference-serving` is left in as the cheap sanity bound (every base
+# in this repo sets it on the pod template) so an empty selector cannot silently
+# match unrelated pods if the group-key label ever goes missing.
+#
+# Preferred, not required -- a group that cannot be packed should still schedule,
+# just more slowly. Both terms are inert on a single-pod group (`size: 1`) and
+# start mattering as soon as it is grown.
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/nodeSelector
+  value:
+    cloud.google.com/gke-accelerator: nvidia-b200
+
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/affinity
+  value:
+    podAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 2
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                llm-d.ai/inference-serving: "true"
+            matchLabelKeys:
+              - leaderworkerset.sigs.k8s.io/group-key
+            topologyKey: cloud.google.com/gce-topology-block
+        - weight: 1
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                llm-d.ai/inference-serving: "true"
+            matchLabelKeys:
+              - leaderworkerset.sigs.k8s.io/group-key
+            topologyKey: cloud.google.com/gce-topology-subblock

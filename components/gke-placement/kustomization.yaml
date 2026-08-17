@@ -1,0 +1,18 @@
+# B200 node selection + GCE topology packing for every LeaderWorkerSet in the
+# consuming overlay.
+#
+# This replaces the per-role placement-prefill.yaml / placement-decode.yaml that
+# each GKE overlay used to carry: with the LWS group-key doing the work in the
+# affinity, one untargeted patch covers prefill, decode, and the aggregated
+# single-role deployment. See placement.yaml.
+#
+# Pull it into an overlay with:
+#   components:
+#     - ../../../../components/gke-placement
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - path: placement.yaml
+    target:
+      kind: LeaderWorkerSet

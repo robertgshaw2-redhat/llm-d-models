@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: decode-podmonitor
+  labels:
+    llm-d.ai/role: decode
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/role: decode
+  podMetricsEndpoints:
+    - port: modelserver
+      path: /metrics
+      interval: 5s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: prefill-podmonitor
+  labels:
+    llm-d.ai/role: prefill
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/role: prefill
+  podMetricsEndpoints:
+    - port: modelserver
+      path: /metrics
+      interval: 5s

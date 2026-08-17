@@ -1,0 +1,7 @@
+# Portable HF weight pre-puller. Not applyable as-is: it has no model and no
+# node-local cache path until an overlay supplies them -- see ../overlays/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cache-warmer.yaml

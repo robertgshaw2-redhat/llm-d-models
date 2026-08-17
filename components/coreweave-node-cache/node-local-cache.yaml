@@ -1,0 +1,26 @@
+# CoreWeave node-local NVMe. hostPath, not a PVC -- these survive pod restarts
+# on the same node, so the weight pull and the kernel JIT are paid once per node
+# rather than once per pod. Nothing shares them across nodes; a pod landing on a
+# cold node re-downloads. ../../cache-warmer.yaml pre-populates /mnt/local/hf-cache
+# on every GPU node.
+#
+# `emptyDir: null` deletes the base's per-pod scratch: a volume may only have one
+# source, so it has to go before hostPath can take its place.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    spec:
+      volumes:
+        - name: hf-cache
+          emptyDir: null
+          hostPath:
+            path: /mnt/local/hf-cache
+            type: DirectoryOrCreate
+        - name: jit-cache
+          emptyDir: null
+          hostPath:
+            path: /mnt/local/jit-cache
+            type: DirectoryOrCreate

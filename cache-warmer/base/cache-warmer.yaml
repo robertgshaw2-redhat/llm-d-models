@@ -1,0 +1,80 @@
+# Pre-pulls the model into the per-node HF cache that the cluster overlays mount,
+# so vLLM pods start against a warm cache instead of each replica racing to
+# download the weights.
+#
+# This is a DaemonSet (not a Job) because the cache is a node-local hostPath, so
+# every GPU node needs its own copy.
+#
+# Portable on purpose -- nothing here names a cluster. Two things are supplied by
+# the overlay and the DaemonSet is useless without them:
+#   - MODEL_ID: which weights to pull (the container exits immediately if unset).
+#   - the hf-cache volume + scheduling: emptyDir and "every node" here, repointed
+#     at the cluster's node-local disk and narrowed to its GPU nodes.
+# So apply an overlay, never this base:
+#   ../overlays/coreweave  ../overlays/gke
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hf-cache-warmer
+  labels:
+    app: hf-cache-warmer
+spec:
+  selector:
+    matchLabels:
+      app: hf-cache-warmer
+  template:
+    metadata:
+      labels:
+        app: hf-cache-warmer
+    spec:
+      volumes:
+        # Per-node scratch by default, which warms nothing that outlives the pod
+        # -- overlays repoint this at the same host path their vLLM pods mount.
+        - name: hf-cache
+          emptyDir: {}
+      containers:
+        - name: downloader
+          image: python:3.12-slim
+          securityContext:
+            runAsUser: 0
+          command:
+            - /bin/bash
+            - -c
+          args:
+            - |-
+              set -euo pipefail
+              : "${MODEL_ID:?no model to warm -- set MODEL_ID in the overlay patch}"
+
+              pip install --no-cache-dir -q "huggingface_hub"
+              hf download "${MODEL_ID}" --max-workers 8 2>&1
+
+              echo "download complete: ${MODEL_ID} -> ${HF_HUB_CACHE}"
+              sleep infintity
+          env:
+            # Set by the overlay -- each cluster serves a different model.
+            - name: MODEL_ID
+              value: "moonshotai/Kimi-K3"
+            # The mount path, identical everywhere; only the host path behind it
+            # is cluster-specific. Must match HF_HUB_CACHE in the vLLM bases so
+            # they find the weights on the same cache layout.
+            - name: HF_HUB_CACHE
+              value: /var/cache/huggingface
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+            limits:
+              cpu: "8"
+              memory: 32Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /var/cache/huggingface

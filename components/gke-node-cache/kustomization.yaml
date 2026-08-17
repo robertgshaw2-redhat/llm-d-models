@@ -1,0 +1,23 @@
+# Weight cache on the GKE node's ephemeral SSD, for every LeaderWorkerSet in the
+# consuming overlay. The GKE counterpart of ../coreweave-node-cache (that one
+# patches Deployments and uses /mnt/local; the paths differ per cluster, which is
+# the whole reason they are two components).
+#
+# Model-agnostic: the patch names no model and no role. It does assume every base
+# declares volumes in the order [dshm, hf-cache, jit-cache] -- JSON 6902 cannot
+# select a list entry by name -- and `test`s that assumption so a reordered base
+# fails the build.
+#
+# The hostPath here has to match ../../cache-warmer/overlays/gke, which
+# pre-populates it. Change them together.
+#
+# Pull it into an overlay with:
+#   components:
+#     - ../../../../components/gke-node-cache
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - path: node-cache.yaml
+    target:
+      kind: LeaderWorkerSet

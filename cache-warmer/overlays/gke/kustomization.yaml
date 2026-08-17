@@ -1,0 +1,20 @@
+# Warms the node-local HF cache on every GKE B200 node with the model
+# disaggregated/base/inkling-large serves.
+#
+#   kubectl config use-context gke_llm-d-scale_us-west8_wide-ep-cluster-us-west8
+#   kubectl apply -k cache-warmer/overlays/gke -n default
+#   kubectl rollout status ds/hf-cache-warmer -n default
+#   kubectl logs -l app=hf-cache-warmer -n default --tail=5
+#   kubectl kustomize cache-warmer/overlays/gke   # render only
+#
+# Run this before applying disaggregated/overlays/gke/inkling-large. Pods idle
+# after the download completes; delete the DaemonSet once every node reports
+# "download complete".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: warmer.yaml

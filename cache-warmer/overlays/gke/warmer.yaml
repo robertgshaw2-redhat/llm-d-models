@@ -1,0 +1,34 @@
+# GKE: the shared_disk directory on the node's ephemeral SSD, B200 nodes.
+#
+# The hostPath must stay in step with the one in
+# ../../../components/gke-node-cache/node-cache.yaml, which every GKE serving
+# overlay now pulls in. That component patches LeaderWorkerSets and this patches a
+# DaemonSet, so there is no single component both can share -- the path is written
+# down twice; change both together or the warmer fills a directory nothing reads.
+#
+# `emptyDir: null` deletes the base's per-pod scratch: a volume may only have one
+# source, so it has to go before hostPath can take its place.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hf-cache-warmer
+spec:
+  template:
+    spec:
+      # Same selector the inkling-large pods use, so the warmer lands on exactly
+      # the nodes that will serve -- and on none of the CPU-only nodes.
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-b200
+      tolerations:
+        # No-op on an untainted pool (the inkling-large pods carry no tolerations
+        # and schedule fine), but GKE adds this taint whenever the node pool is
+        # created with GPU taints enabled.
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+        - name: hf-cache
+          emptyDir: null
+          hostPath:
+            path: /mnt/stateful_partition/kube-ephemeral-ssd/shared_disk/vllm-hf-cache/
+            type: DirectoryOrCreate

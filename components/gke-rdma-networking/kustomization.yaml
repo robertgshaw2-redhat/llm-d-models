@@ -1,0 +1,19 @@
+# GKE multi-networking (RoCE) for every LeaderWorkerSet in the consuming overlay.
+#
+# Model-agnostic on purpose: the patch names no model, no role, and no LWS --
+# it only assumes the vLLM container is containers[0], which it `test`s. That is
+# what lets one copy serve inkling-large, kimi-k3, and whatever comes next.
+#
+# Pull it into an overlay with:
+#   components:
+#     - ../../../../components/gke-rdma-networking
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Untargeted by name or label: every LeaderWorkerSet in the consuming overlay
+# gets the patch, prefill and decode alike. A base that should *not* have RDMA
+# does not belong in a GKE wide-EP overlay in the first place.
+patches:
+  - path: rdma-networking.yaml
+    target:
+      kind: LeaderWorkerSet

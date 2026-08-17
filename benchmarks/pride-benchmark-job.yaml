@@ -1,0 +1,168 @@
+# GuideLLM load test driving contiguous *Pride and Prejudice* passages at the
+# vLLM service in service.yaml -- the run to use when the number you care about
+# is speculative-decoding acceptance rate.
+#
+#   kubectl apply  -f dataset-pvc.yaml
+#   kubectl create -f pride-preprocess-job.yaml   # once, builds the JSONL
+#   kubectl create -f pride-benchmark-job.yaml
+#   kubectl logs -f job/<generated-name>
+#
+# Uses generateName, so every `kubectl create -f` gets a fresh Job.
+#
+# Differences from benchmark-job.yaml, all deliberate:
+#
+#   * /v1/completions instead of /v1/chat/completions. The prompt is a passage
+#     of a novel and the task is to continue it, so a chat template wrapping it
+#     in turn markers only adds tokens the draft model has to guess through.
+#   * add_special_tokens=false. vLLM's Completions API prepends BOS by default,
+#     which would make the 15000-token prompt measured here arrive as 15001.
+#   * An explicit --data-column-mapper. The preprocess step writes a `prompt`
+#     column, not the `text` column GuideLLM infers by default.
+#   * A request-count budget rather than a wall-clock one, so the run consumes
+#     each distinct passage exactly once instead of replaying the head of the
+#     dataset for N seconds.
+#
+# ISL and OSL are baked into the JSONL, not set here -- the values below only
+# label the results, so keep them matching whatever DATASET points at. The knobs
+# that still take effect are CONCURRENCY and MAX_REQUESTS, substituted via
+# Kubernetes' $(VAR) expansion. To override them per-run without editing this
+# file (the trick run-benchmark.sh uses):
+#
+#   kubectl create -f pride-benchmark-job.yaml --dry-run=client -o yaml \
+#     | kubectl set env --local -f - -o yaml CONCURRENCY=64 MAX_REQUESTS=256 \
+#     | kubectl create -f -
+#
+# CONCURRENCY accepts a list to sweep several points in one run, e.g. "1,8,32".
+# Note that a sweep replays the same 256 prompts once per point.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: guidellm-pride-
+  labels:
+    app.kubernetes.io/name: guidellm
+    app.kubernetes.io/component: benchmark
+spec:
+  # A benchmark that dies should not silently re-run and report half a dataset.
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: guidellm
+        app.kubernetes.io/component: benchmark
+    spec:
+      restartPolicy: Never
+      # The load generator needs no GPU, but the only nodes with spare
+      # CPU/memory in these clusters are the GPU pools, which are tainted. Both
+      # tolerations are no-ops on a pool that doesn't carry the matching taint.
+      tolerations:
+        # GKE GPU node pools (nvidia.com/gpu=present:NoSchedule).
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        # CoreWeave GPU nodes (is_gpu=true:PreferNoSchedule).
+        - key: is_gpu
+          operator: Equal
+          value: "true"
+          effect: PreferNoSchedule
+      containers:
+        - name: guidellm
+          image: ghcr.io/vllm-project/guidellm:v0.7.3
+          # The image entrypoint is `guidellm`, so args start at the subcommand.
+          env:
+            # Written by pride-preprocess-job.yaml. Must exist on the PVC before
+            # this Job runs, or GuideLLM exits immediately with
+            # DataNotSupportedError.
+            - name: DATASET
+              value: /data/pride-15k-900.jsonl
+            # Labels only -- the real lengths come from DATASET.
+            - name: ISL
+              value: "15000"
+            - name: OSL
+              value: "900"
+            - name: CONCURRENCY
+              value: "32"
+            # Stop condition. Match the SAMPLES count in the preprocess Job to
+            # send every passage once and none of them twice.
+            - name: MAX_REQUESTS
+              value: "256"
+            - name: TARGET
+              value: http://gemma-4-26b-a4b-it:8000
+            - name: MODEL
+              value: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+                  optional: true
+            - name: HF_HOME
+              value: /cache/huggingface
+          args:
+            - run
+            - --backend
+            - kind=openai_http,target=$(TARGET),model=$(MODEL),request_format=/v1/completions,extras.body.add_special_tokens=false
+            # split=train is required: load_dataset("json", ...) returns a
+            # DatasetDict, and the column mapper needs a plain Dataset.
+            - --data
+            - kind=json_file,path=$(DATASET),load_kwargs.split=train
+            # Single-quoted so the JSON survives YAML parsing intact.
+            - --data-column-mapper
+            - '{"kind":"generative_column_mapper","column_mappings":{"text_column":"prompt","prompt_tokens_count_column":"prompt_tokens_count","output_tokens_count_column":"output_tokens_count"}}'
+            # Must be the tokenizer the server uses, or GuideLLM's reported
+            # prompt lengths will not agree with vLLM's.
+            - --tokenizer
+            - kind=huggingface_auto,model=$(MODEL)
+            - --profile
+            - kind=concurrent,streams=$(CONCURRENCY),warmup=0.1,cooldown=0.1
+            # Because output_tokens_count is supplied per row, GuideLLM sends
+            # max_tokens=900 with ignore_eos=true, so every request decodes
+            # exactly 900 tokens and decode load stays constant across runs.
+            - --constraint
+            - kind=max_requests,count=$(MAX_REQUESTS)
+            # Swap for a time budget instead of a request-count budget:
+            # - --constraint
+            # - kind=max_duration,seconds=120
+            - --label
+            - dataset=pride
+            - --label
+            - isl=$(ISL)
+            - --label
+            - osl=$(OSL)
+            - --label
+            - concurrency=$(CONCURRENCY)
+            - --output
+            - kind=json,path=/results/benchmarks.json
+            - --output
+            - kind=csv,path=/results/benchmarks.csv
+            # Job logs are not a TTY; the redrawing progress bar just produces
+            # thousands of escape-sequence lines. The final summary still prints.
+            - --disable-console-interactive
+          resources:
+            limits:
+              cpu: "4"
+              memory: 8Gi
+            requests:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: datasets
+              mountPath: /data
+              readOnly: true
+            - name: results
+              mountPath: /results
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: datasets
+          persistentVolumeClaim:
+            claimName: guidellm-datasets
+            readOnly: true
+        # emptyDir keeps the run self-contained: the summary table lands in the
+        # pod logs and the JSON/CSV go here. Point this at a PVC if you need the
+        # raw reports to outlive the pod.
+        - name: results
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}

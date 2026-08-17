@@ -1,0 +1,232 @@
+# Builds a fixed-shape prompt set from the Project Gutenberg text of *Pride and
+# Prejudice* and writes it to the guidellm-datasets PVC:
+#
+#   kubectl apply  -f dataset-pvc.yaml
+#   kubectl create -f pride-preprocess-job.yaml
+#   kubectl logs -f job/<generated-name>
+#
+# Why this exists alongside preprocess-job.yaml: GuideLLM's `synthetic_text` no
+# longer takes a corpus -- as of 0.7.3 it generates prompts with Faker, which is
+# word salad. A draft model has nothing to predict from word salad, so
+# speculative decoding measured against it shows an acceptance rate far below
+# what real traffic would see. Every prompt here is instead a contiguous passage
+# of English prose, which is what makes the acceptance number meaningful.
+#
+# Windows are evenly spaced across the book rather than all starting at token 0,
+# so requests do not share a long cacheable prefix. The book is ~190k tokens and
+# the window is 15k, so at SAMPLES=256 the stride is only ~680 tokens and the
+# windows overlap heavily -- that is fine for the current Deployment, which runs
+# with --no-enable-prefix-caching. Turn prefix caching back on and this dataset
+# will report inflated numbers.
+#
+# Two things this Job needs egress for: gutenberg.org (PRIDE_URL, repoint it at
+# an internal mirror if the cluster is locked down) and huggingface.co (the
+# tokenizer). Nothing is cached between runs.
+#
+# Rerunning overwrites $OUTPUT in place. Change OUTPUT (and the DATASET env in
+# pride-benchmark-job.yaml) to keep several (ISL, OSL) variants side by side.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: guidellm-preprocess-pride-
+  labels:
+    app.kubernetes.io/name: guidellm
+    app.kubernetes.io/component: preprocess
+spec:
+  backoffLimit: 0
+  completions: 1
+  parallelism: 1
+  # One book, a few hundred windows -- minutes, not the hours pg19 takes.
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: guidellm
+        app.kubernetes.io/component: preprocess
+    spec:
+      restartPolicy: Never
+      # Tokenizing a novel needs no GPU, but the only nodes with spare
+      # CPU/memory in these clusters are the GPU pools, which are tainted. Both
+      # tolerations are no-ops on a pool that doesn't carry the matching taint.
+      tolerations:
+        # GKE GPU node pools (nvidia.com/gpu=present:NoSchedule).
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        # CoreWeave GPU nodes (is_gpu=true:PreferNoSchedule).
+        - key: is_gpu
+          operator: Equal
+          value: "true"
+          effect: PreferNoSchedule
+      containers:
+        - name: preprocess
+          # Only borrowed for its Python and transformers; the windowing logic
+          # below is ours, since `guidellm preprocess dataset` has no way to cut
+          # many overlapping windows out of a single row.
+          image: ghcr.io/vllm-project/guidellm:v0.7.3
+          env:
+            - name: PROMPT_TOKENS
+              value: "15000"
+            - name: OUTPUT_TOKENS
+              value: "900"
+            # Keep this equal to the max_requests constraint in
+            # pride-benchmark-job.yaml so every prompt is sent exactly once.
+            - name: SAMPLES
+              value: "256"
+            - name: OUTPUT
+              value: /data/pride-15k-900.jsonl
+            # Token counts are only meaningful against the tokenizer the server
+            # uses -- keep this in sync with deployment.yaml.
+            - name: MODEL
+              value: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+            - name: PRIDE_URL
+              value: https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+                  optional: true
+            - name: HF_HOME
+              value: /cache/huggingface
+          # The image entrypoint is `guidellm`, so it has to be replaced
+          # outright rather than appended to.
+          command:
+            - python3
+            - -c
+            - |
+              import json
+              import os
+              import re
+              import urllib.request
+
+              from transformers import AutoTokenizer
+
+              ISL = int(os.environ["PROMPT_TOKENS"])
+              OSL = int(os.environ["OUTPUT_TOKENS"])
+              SAMPLES = int(os.environ["SAMPLES"])
+              OUTPUT = os.environ["OUTPUT"]
+              MODEL = os.environ["MODEL"]
+              PRIDE_URL = os.environ["PRIDE_URL"]
+
+
+              def strip_gutenberg_wrapper(text):
+                  """Drop the licence header and footer so only Austen remains."""
+                  start = re.search(
+                      r"\*\*\* START OF THE PROJECT GUTENBERG EBOOK.*?\*\*\*",
+                      text,
+                      flags=re.IGNORECASE,
+                  )
+                  end = re.search(
+                      r"\*\*\* END OF THE PROJECT GUTENBERG EBOOK.*?\*\*\*",
+                      text,
+                      flags=re.IGNORECASE,
+                  )
+                  if start:
+                      text = text[start.end():]
+                  if end:
+                      text = text[:end.start()]
+                  return text.strip()
+
+
+              tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
+
+              with urllib.request.urlopen(PRIDE_URL) as response:
+                  book = response.read().decode("utf-8-sig")
+
+              book = strip_gutenberg_wrapper(book)
+              book_tokens = tokenizer.encode(book, add_special_tokens=False)
+              print(f"==> book is {len(book_tokens)} tokens", flush=True)
+
+              if len(book_tokens) < ISL:
+                  raise RuntimeError(
+                      f"book has only {len(book_tokens)} tokens; "
+                      f"cannot cut a {ISL}-token window"
+                  )
+
+              max_start = len(book_tokens) - ISL
+              if SAMPLES == 1:
+                  starts = [0]
+              else:
+                  starts = [
+                      round(index * max_start / (SAMPLES - 1))
+                      for index in range(SAMPLES)
+                  ]
+
+
+              def exact_window(start):
+                  """Return ISL tokens of text starting at `start`, or None.
+
+                  What gets sent is the decoded string, not the ids, and a slice
+                  boundary usually lands mid-word: re-encoding the decoded text
+                  can come back a token or two off. Nudge the end by the shortfall
+                  and re-check rather than failing the whole run over it -- the
+                  server counts what it re-encodes, so only that number matters.
+                  """
+                  end = start + ISL
+                  for _ in range(8):
+                      if end <= start or end > len(book_tokens):
+                          return None
+                      prompt = tokenizer.decode(
+                          book_tokens[start:end],
+                          skip_special_tokens=False,
+                          clean_up_tokenization_spaces=False,
+                      )
+                      actual = len(tokenizer.encode(prompt, add_special_tokens=False))
+                      if actual == ISL:
+                          return prompt
+                      end += ISL - actual
+                  return None
+
+
+              written = 0
+              skipped = 0
+              with open(OUTPUT, "w", encoding="utf-8") as output_file:
+                  for start in starts:
+                      prompt = exact_window(start)
+                      if prompt is None:
+                          skipped += 1
+                          continue
+                      output_file.write(
+                          json.dumps(
+                              {
+                                  "prompt": prompt,
+                                  "prompt_tokens_count": ISL,
+                                  "output_tokens_count": OSL,
+                              },
+                              ensure_ascii=False,
+                          )
+                          + "\n"
+                      )
+                      written += 1
+
+              print(
+                  f"==> wrote {written} prompts to {OUTPUT} "
+                  f"({skipped} windows would not round-trip to exactly {ISL} "
+                  f"tokens and were skipped); ISL={ISL} OSL={OSL}",
+                  flush=True,
+              )
+
+              # An empty dataset fails much less clearly at benchmark time.
+              if written == 0:
+                  raise RuntimeError("no prompts written")
+          resources:
+            limits:
+              cpu: "4"
+              memory: 8Gi
+            requests:
+              cpu: "2"
+              # The whole book is held as one token-id list and each window is
+              # encoded twice; a few Gi is plenty for a single novel.
+              memory: 4Gi
+          volumeMounts:
+            - name: datasets
+              mountPath: /data
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: datasets
+          persistentVolumeClaim:
+            claimName: guidellm-datasets
+        - name: cache
+          emptyDir: {}

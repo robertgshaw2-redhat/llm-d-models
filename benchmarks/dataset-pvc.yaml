@@ -1,0 +1,29 @@
+# Holds preprocessed GuideLLM datasets so they outlive the Job that built them
+# and can be replayed by any number of benchmark runs.
+#
+#   kubectl apply -f dataset-pvc.yaml
+#   kubectl create -f preprocess-job.yaml     # writes /data/pg19-15k-900.jsonl
+#   ./run-benchmark.sh                        # reads it back
+#
+# ReadWriteOnce is enough for the sequential workflow above: the preprocess Job
+# finishes and releases the volume before a benchmark Job mounts it. Two
+# benchmark pods at once (or a benchmark running while preprocess is still
+# going) need ReadWriteMany and a storage class that supports it -- on most
+# block-storage provisioners RWO also pins every consumer to a single node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: guidellm-datasets
+  labels:
+    app.kubernetes.io/name: guidellm
+    app.kubernetes.io/component: dataset
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # ~2000 prompts x 15k tokens is roughly 130Mi of JSONL; the rest is room
+      # for more (ISL, OSL) variants alongside it.
+      storage: 10Gi
+  # Uncomment to pin a class instead of taking the cluster default.
+  # storageClassName: standard

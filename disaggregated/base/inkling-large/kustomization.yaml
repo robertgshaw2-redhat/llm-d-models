@@ -1,0 +1,8 @@
+# Do not apply this directly -- pick an overlay:
+#   kubectl apply -k disaggregated/overlays/gke/inkling-large -n default
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - prefill.yaml
+  - decode.yaml

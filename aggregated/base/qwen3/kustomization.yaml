@@ -1,0 +1,11 @@
+# Cluster-agnostic aggregated Qwen3 deployment + its smoke-test Service.
+# The small model that fits on one GPU -- used to shake out routing and the
+# benchmark harness without tying up an H200 node.
+#
+# Do not apply this directly -- pick an overlay:
+#   kubectl apply -k aggregated/overlays/coreweave/qwen3 -n robshaw-dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - qwen3.yaml

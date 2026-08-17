@@ -1,0 +1,19 @@
+# Warms /mnt/local/hf-cache on every CoreWeave H200 node with the model the
+# CoreWeave overlays serve.
+#
+#   kubectl apply -k cache-warmer/overlays/coreweave -n robshaw-dev
+#   kubectl rollout status ds/hf-cache-warmer -n robshaw-dev
+#   kubectl logs -l app=hf-cache-warmer -n robshaw-dev --tail=5
+#   kubectl kustomize cache-warmer/overlays/coreweave   # render only
+#
+# Run this before applying aggregated/overlays/coreweave/* or
+# disaggregated/overlays/coreweave/*. Pods idle after the download completes;
+# delete the DaemonSet once every node reports "download complete".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: warmer.yaml
