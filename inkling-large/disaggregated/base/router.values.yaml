@@ -1,0 +1,77 @@
+# Values for the llm-d EPP / InferencePool router in front of the disaggregated
+# prefill+decode pods in prefill.yaml / decode.yaml (applied through
+# ../gke-b200). Cluster-agnostic, and a Helm values file rather than a manifest,
+# so the kustomization does not list it.
+#
+# Deploy:
+#   helm upgrade --install inkling-large oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f inkling-large/disaggregated/base/router.values.yaml
+#
+# The release name drives the resource names: `inkling-large` creates the
+# InferencePool `inkling-large` and the Service/Deployment `inkling-large-epp`, so
+# the routed endpoint is http://inkling-large-epp:80 (the extraServicePorts
+# 80->8081 map below) -- which is what the justfile's `url` expects. Uninstall
+# with `helm uninstall inkling-large -n default`.
+router:
+  epp:
+    replicas: 1
+    flags:
+      ha-enable-leader-election: false
+    env:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: llm-d-hf-token
+            key: HF_TOKEN
+
+    pluginsConfigFile: "inkling-large-pd-plugins.yaml"
+    pluginsCustomConfig:
+      inkling-large-pd-plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+          - type: disagg-headers-handler
+          - type: always-disagg-pd-decider
+          - type: disagg-profile-handler
+            parameters:
+              deciderPluginName: always-disagg-pd-decider
+          - type: prefill-filter
+          - type: decode-filter
+          - type: approx-prefix-cache-producer
+          - type: inflight-load-producer
+          - type: prefix-cache-affinity-filter
+            parameters:
+              peakPrefillThroughput: 30000
+          - type: token-load-scorer
+          - type: active-request-scorer
+          - type: max-score-picker
+        schedulingProfiles:
+        # Prefill does the prompt pass: keep prefix groups on cache-warm pods
+        # (affinity filter) and pick by queued prefill token load.
+        - name: prefill
+          plugins:
+          - pluginRef: prefill-filter
+          - pluginRef: prefix-cache-affinity-filter
+          - pluginRef: token-load-scorer
+          - pluginRef: max-score-picker
+        # Decode is bound by concurrent in-flight requests, not prefill
+        # throughput: pick the least-busy endpoint.
+        - name: decode
+          plugins:
+          - pluginRef: decode-filter
+          - pluginRef: active-request-scorer
+          - pluginRef: max-score-picker
+
+  extraServicePorts:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+
+  modelServers:
+    type: vllm
+    targetPorts:
+      # 8000 on both roles: vLLM directly on prefill, the routing-proxy sidecar
+      # on decode (vLLM itself sits on 8200 there).
+      - number: 8000
+    matchLabels:
+      llm-d.ai/guide: "inkling-large-pd"

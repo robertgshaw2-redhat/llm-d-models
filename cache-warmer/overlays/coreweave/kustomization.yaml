@@ -6,9 +6,9 @@
 #   kubectl logs -l app=hf-cache-warmer -n robshaw-dev --tail=5
 #   kubectl kustomize cache-warmer/overlays/coreweave   # render only
 #
-# Run this before applying aggregated/overlays/coreweave/* or
-# disaggregated/overlays/coreweave/*. Pods idle after the download completes;
-# delete the DaemonSet once every node reports "download complete".
+# Run this before applying the cks-h200 overlays under each model. Pods idle
+# after the download completes; delete the DaemonSet once every node reports
+# "download complete".
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

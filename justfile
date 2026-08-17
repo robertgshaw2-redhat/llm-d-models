@@ -22,13 +22,13 @@
 #   NAMESPACE=other-ns MODEL=Qwen/Qwen3-32B URL=http://qwen3-svc:8000 just run 16
 namespace := env_var_or_default("NAMESPACE", "default")
 deploy    := "aiperf-agentx"
-# Must match what the vLLM pods actually serve (aggregated/base/inkling-small/) and the
+# Must match what the vLLM pods actually serve (inkling-small/aggregated/base/) and the
 # token-producer modelName in router.values.yaml.
 model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
 # MODEL=Qwen/Qwen3-4B-Thinking-2507
 # MODEL=nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8
 # MODEL=Qwen/Qwen3-32B
-# inkling-small-svc from aggregated/base/inkling-small/ -- direct to the pods,
+# inkling-small-svc from inkling-small/aggregated/base/ -- direct to the pods,
 # bypassing EPP scheduling. Plain HTTP in-cluster, resolves from any pod in
 # {{namespace}}. No trailing slash.
 # url       := env_var_or_default("URL", "http://inkling-large-agg-svc:8000")
@@ -43,7 +43,7 @@ url := env_var_or_default("URL", "http://inkling-large-epp:80")
 # duration    := "10"
 duration    := "900"
 
-# The vLLM serving Deployment itself (aggregated/base/inkling-small/), not the
+# The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.

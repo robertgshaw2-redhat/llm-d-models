@@ -1,0 +1,20 @@
+# CoreWeave-specific layer over the portable aggregated Inkling deployment.
+#
+#   kubectl apply -k inkling-small/aggregated/cks-h200 -n robshaw-dev
+#   kubectl kustomize inkling-small/aggregated/cks-h200   # render only
+#
+# Warm the node caches first with ../../../cache-warmer/overlays/coreweave.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+# /mnt/local NVMe for the HF weight and JIT kernel caches.
+components:
+  - ../../../components/coreweave-node-cache
+
+# InfiniBand is off: single-node TP=2 rides NVLink. Uncomment both lines when
+# this grows to multi-node TP/EP -- infiniband.yaml has the details.
+# patches:
+#   - path: infiniband.yaml
