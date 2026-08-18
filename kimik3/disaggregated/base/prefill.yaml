@@ -46,7 +46,8 @@ spec:
         containers:
           - name: vllm
             # image: docker.io/vllm/vllm-openai:nightly
-            image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:b24e5a9cbeb1223ec76c21be7f9aa4571f6d24bf
+            # image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:b24e5a9cbeb1223ec76c21be7f9aa4571f6d24bf
+            image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:e9f8d9d3f2aafac4e1cf430743446e9048dc401d
             imagePullPolicy: Always
             command:
               - /bin/bash
@@ -61,8 +62,7 @@ spec:
                 export VLLM_USE_V2_MODEL_RUNNER=1
                 export VLLM_SSM_CONV_STATE_LAYOUT=DS
                 export VLLM_DEEPEP_V2_ALLOW_HYBRID_MODE=1
-
-                export NCCL_GIN_TYPE=3
+                export VLLM_DEEPEP_V2_ALLOW_MULTIPLE_REDUCTION=1
                 export VLLM_KIMI_K3_SHARD_SP_SHARED_EXPERT=0
 
                 # --- image gap-fillers -------------------------------------
@@ -85,6 +85,55 @@ spec:
                     || echo "WARN: infiniband-diags install failed; ibstat stays missing"
                 fi
 
+                # --- debug patch: log the KV cache group block sizes --------
+                # With the hybrid KV cache manager there are several groups (MLA
+                # attention + mamba), and resolve_kv_cache_block_sizes() derives the
+                # scheduler block size (LCM of the per-group sizes) and the hash block
+                # size (GCD, or --prefix-match-unit) without logging any of them -- so a
+                # mismatch only ever surfaces as a ValueError. Inject two INFO lines so
+                # the pod logs show what each group actually got. Set
+                # PATCH_LOG_BLOCK_SIZES=0 once upstream logs this itself.
+                if [[ "${PATCH_LOG_BLOCK_SIZES}" == "1" ]]; then
+                python3 - <<'PY' || echo "WARN: block-size log patch failed; running unpatched"
+                import importlib.util
+
+                path = importlib.util.find_spec("vllm.v1.core.kv_cache_utils").origin
+                src = open(path).read()
+                if "PATCHED_BLOCK_SIZE_LOG" in src:
+                    print(f"block-size log patch already present in {path}")
+                    raise SystemExit(0)
+
+                # After the per-group sizes are built and reduced to the scheduler block size.
+                anchor = "    scheduler_block_size = math.lcm(*group_block_sizes)\n"
+                inject = anchor + (
+                    "    logger.info(  # PATCHED_BLOCK_SIZE_LOG\n"
+                    '        "KV cache groups: specs=%s block_sizes=%s scheduler_block_size=%s",\n'
+                    "        [type(g.kv_cache_spec).__name__ for g in groups],\n"
+                    "        group_block_sizes,\n"
+                    "        scheduler_block_size,\n"
+                    "    )\n"
+                )
+
+                # Before the divisibility check, so the resolved hash granularity is logged
+                # whether it came from --prefix-match-unit or from the GCD.
+                anchor2 = "    if any(bs % hash_block_size != 0 for bs in group_block_sizes):\n"
+                inject2 = (
+                    "    logger.info(  # PATCHED_BLOCK_SIZE_LOG\n"
+                    '        "KV cache groups: prefix_match_unit=%s hash_block_size=%s",\n'
+                    "        requested,\n"
+                    "        hash_block_size,\n"
+                    "    )\n"
+                ) + anchor2
+
+                for a, i in ((anchor, inject), (anchor2, inject2)):
+                    assert src.count(a) == 1, f"anchor not found exactly once in {path}: {a!r}"
+                    src = src.replace(a, i)
+
+                open(path, "w").write(src)
+                print(f"block-size log patch applied to {path}")
+                PY
+                fi
+
                 unset VLLM_GPU_SYNC_CHECK
                 exec vllm serve "${MODEL}" \
                   --port 8000 \
@@ -96,7 +145,6 @@ spec:
                   --max-num-batched-tokens "${MAX_BATCHED_TOKENS}" \
                   --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD}" \
                   --max-num-seqs "${MAX_SEQS}" \
-                  --speculative-config "{\"model\":\"RedHatAI/Kimi-K3-speculator.dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${SPEC_TOKENS},\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}" \
                   --data-parallel-hybrid-lb \
                   --data-parallel-size "${DP_SIZE}" \
                   --data-parallel-size-local "${DP_SIZE_LOCAL}" \
@@ -114,7 +162,11 @@ spec:
                   --max-cudagraph-capture-size "${MAX_SEQS}" \
                   --no-enable-flashinfer-autotune \
                   --enforce-eager \
-                  --prefix-match-unit 32
+                  --speculative-config "{\"model\":\"RedHatAI/Kimi-K3-speculator.dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${SPEC_TOKENS},\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}"
+
+                  # --prefix-match-unit 32 \
+                  # --speculative-config "{\"model\":\"Inferact/Kimi-K3-DSpark\",\"method\":\"dspark\",\"num_speculative_tokens\":${SPEC_TOKENS},\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}"
+                  # --speculative-config "{\"model\":\"RedHatAI/Kimi-K3-speculator.dspark\",\"method\":\"dspark\",\"num_speculative_tokens\":${SPEC_TOKENS},\"draft_sample_method\":\"probabilistic\",\"rejection_sample_method\":\"block\"}"
 
             env:
               - name: MODEL
@@ -134,6 +186,8 @@ spec:
               - name: BOOTSTRAP_NIXL
                 value: "1"
               - name: BOOTSTRAP_IB_DIAGS
+                value: "1"
+              - name: PATCH_LOG_BLOCK_SIZES
                 value: "1"
               - name: HF_TOKEN
                 valueFrom:

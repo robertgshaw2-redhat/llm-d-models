@@ -35,6 +35,15 @@ router:
           - type: prefill-filter
           - type: decode-filter
           - type: approx-prefix-cache-producer
+            parameters:
+              # 64 chars ~= 16 tokens/block (Kimi's tokenizer is ~4 chars/token
+              # on English/code, fewer on CJK — close enough for the approx index)
+              blockSize: 64
+              # cover the full max_model_len=1,048,576 tokens: 1M / 16 = 65,536
+              maxPrefixBlocksToMatch: 65536
+              # ~10M entries/pod, ~100x the ~96k blocks actually resident
+              # (kv_cache_size_tokens=1.53M / 16); effectively never evicts
+              lruCapacityPerServer: 100000000
           - type: inflight-load-producer
           - type: prefix-cache-affinity-filter
             parameters:
