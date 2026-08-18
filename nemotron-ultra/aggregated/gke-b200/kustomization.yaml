@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+components:
+  - ../../../components/gke-node-cache
+  - ../../../components/gke-triton-libcuda
+
+patches:
+  - target:
+      kind: LeaderWorkerSet
+      name: inkling
+    patch: |-
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/0/name
+        value: MODEL
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/0/value
+        value: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4

@@ -1,0 +1,54 @@
+# helm upgrade --install nemotron-ultra oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f nemotron-ultra/aggregated/router.values.yaml
+router:
+  epp:
+    replicas: 1
+    flags:
+      ha-enable-leader-election: false
+    
+    # The default pool is too small to fit the EPP, so let it land on a GPU
+    # node instead of going Pending.
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+
+    env:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: llm-d-hf-token
+            key: HF_TOKEN
+
+    pluginsConfigFile: "plugins.yaml"
+    pluginsCustomConfig:
+      plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+          - type: approx-prefix-cache-producer
+          - type: inflight-load-producer
+          - type: prefix-cache-affinity-filter
+            parameters:
+              peakPrefillThroughput: 30000
+          - type: token-load-scorer
+          - type: max-score-picker
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: prefix-cache-affinity-filter
+          - pluginRef: token-load-scorer
+          - pluginRef: max-score-picker
+
+  extraServicePorts:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 8081
+
+  modelServers:
+    type: vllm
+    targetPorts:
+      - number: 8000
+    matchLabels:
+      llm-d.ai/guide: "nemotron-ultra-agg"
