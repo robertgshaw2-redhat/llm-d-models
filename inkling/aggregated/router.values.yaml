@@ -1,21 +1,18 @@
-# Values for the llm-d EPP / InferencePool router in front of the disaggregated
-# prefill+decode pods in prefill.yaml / decode.yaml (applied through
-# ../gke-b200). Cluster-agnostic, and a Helm values file rather than a manifest,
-# so the kustomization does not list it.
-#
-# Deploy:
-#   helm upgrade --install inkling-large oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f inkling-large/disaggregated/base/router.values.yaml
-#
-# The release name drives the resource names: `inkling-large` creates the
-# InferencePool `inkling-large` and the Service/Deployment `inkling-large-epp`, so
-# the routed endpoint is http://inkling-large-epp:80 (the extraServicePorts
-# 80->8081 map below) -- which is what the justfile's `url` expects. Uninstall
-# with `helm uninstall inkling-large -n default`.
+# helm upgrade --install inkling oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f inkling/aggregated/router.values.yaml
 router:
   epp:
     replicas: 1
     flags:
       ha-enable-leader-election: false
+    
+    # The default pool is too small to fit the EPP, so let it land on a GPU
+    # node instead of going Pending.
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+
     env:
       - name: HF_TOKEN
         valueFrom:
@@ -54,4 +51,4 @@ router:
     targetPorts:
       - number: 8000
     matchLabels:
-      llm-d.ai/guide: "inkling-large-agg"
+      llm-d.ai/guide: "inkling-agg"

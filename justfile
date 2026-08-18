@@ -3,9 +3,11 @@
 
 namespace := env_var_or_default("NAMESPACE", "default")
 deploy    := "aiperf-agentx"
-model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
-url       := env_var_or_default("URL", "http://kimik3-epp:80")
-duration  := "900"
+# model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
+model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
+# url       := env_var_or_default("URL", "http://kimik3-epp:80")
+url       := env_var_or_default("URL", "http://inkling-epp:80")
+duration  := "300"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.

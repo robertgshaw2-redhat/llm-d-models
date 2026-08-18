@@ -10,13 +10,13 @@ metadata:
     llm-d.ai/model: inkling
     llm-d.ai/role: decode
 spec:
-  replicas: 1
+  replicas: 2
   startupPolicy: LeaderCreated
   leaderWorkerTemplate:
     # A DP group is a single collective: losing one rank wedges the other, so
     # restart the whole group rather than leaving a half-formed one behind.
     restartPolicy: RecreateGroupOnPodRestart
-    size: 2
+    size: 1
     workerTemplate:
       metadata:
         labels:
