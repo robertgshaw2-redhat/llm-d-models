@@ -6,6 +6,7 @@ resources:
 
 components:
   - ../../../components/gke-node-cache
+  - ../../../components/gke-triton-libcuda
 
 patches:
   - target:

@@ -31,3 +31,4 @@ components:
   - ../../../components/gke-rdma-networking
   - ../../../components/gke-node-cache
   - ../../../components/gke-placement
+  - ../../../components/gke-triton-libcuda

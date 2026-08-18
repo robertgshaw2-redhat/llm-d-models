@@ -53,7 +53,7 @@ spec:
           env:
             # Set by the overlay -- each cluster serves a different model.
             - name: MODEL_ID
-              value: "thinkingmachines/Inkling-NVFP4"
+              value: "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"
             # The mount path, identical everywhere; only the host path behind it
             # is cluster-specific. Must match HF_HUB_CACHE in the vLLM bases so
             # they find the weights on the same cache layout.
