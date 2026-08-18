@@ -1,0 +1,25 @@
+# Disable the GKE-injected NCCL plugins for every LeaderWorkerSet in the
+# consuming overlay.
+#
+# A cluster fact, not a model fact: the GKE B200 node image ships its own NCCL
+# net and tuner plugins and puts them where NCCL finds them automatically, so
+# every pod on this cluster picks them up whether or not it wants them. That is
+# why this lives here rather than in a base -- see nccl-plugins.yaml for what
+# they break.
+#
+# Model-agnostic: the patch names no model and no role, and only assumes the vLLM
+# container is containers[0], which it `test`s -- the same assumption
+# ../gke-rdma-networking makes.
+#
+# Pull it into an overlay with:
+#   components:
+#     - ../../../components/gke-nccl-plugins
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Untargeted by name: prefill, decode, and the aggregated single-role LWS all get
+# it. Every pod on this cluster running vLLM needs it.
+patches:
+  - path: nccl-plugins.yaml
+    target:
+      kind: LeaderWorkerSet

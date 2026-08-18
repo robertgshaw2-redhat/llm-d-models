@@ -1,0 +1,38 @@
+# Take GKE's NCCL plugins out of the loop.
+#
+# The GKE node image preloads a net plugin (the RoCE/gIB fastrak transport) and a
+# tuner plugin into the container. Both are picked up by NCCL automatically, and
+# both are wrong for these workloads: the tuner overrides the algorithm and
+# channel choices NCCL would otherwise make for wide-EP collectives, and the net
+# plugin takes over transport selection from the RDMA setup in
+# ../gke-rdma-networking. The failure is not a clean error -- it shows up as
+# collectives that hang or run an order of magnitude slow, after the weights are
+# loaded, which makes it an expensive thing to discover at runtime.
+#
+# NCCL_NET_PLUGIN is set to the empty string rather than "none": empty means "do
+# not load a net plugin", and NCCL falls back to its built-in transports.
+#
+# These paths are GKE's. CoreWeave stages nothing of the sort, which is why this
+# is a component and not a line in the bases: the bases stay cluster-agnostic and
+# each cluster overlay writes down its own plugin handling.
+#
+# Appended to the env list rather than replacing it -- `-` is the JSON-pointer
+# end-of-array index. JSON 6902 rather than a strategic merge patch for the usual
+# reason: LeaderWorkerSet is a CRD kustomize has no schema for, so a merge patch
+# would replace the whole containers list instead of merging into it. The `test`
+# guards the hardcoded container index.
+- op: test
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/name
+  value: vllm
+
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/-
+  value:
+    name: NCCL_TUNER_PLUGIN
+    value: none
+
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/-
+  value:
+    name: NCCL_NET_PLUGIN
+    value: ""
