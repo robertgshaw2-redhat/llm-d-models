@@ -1,35 +1,13 @@
-# Inkling (large) aggregated -- prefill and decode in one engine -- on 16 GPUs.
-#
-# One LWS group == two 8xB200 nodes == 16 GPUs: TP=8 inside each node over
-# NVLink, DP=2 across the two, so the MoE runs EP = TP x DP = 16 over DeepEP v2
-# on the RDMA fabric. Wide EP is the point of running two nodes: weights are
-# ~592GB NVFP4 and fit in one node's 1.44TB of HBM, so the second node buys
-# expert parallelism and throughput, not capacity.
-#
-# Every pod runs its own API server on :8000 and is routed to directly
-# (--data-parallel-hybrid-lb), so the InferencePool/EPP can send a request to
-# whichever DP rank it likes. That is what makes a 2-pod group behave like two
-# endpoints rather than one leader fronting a hidden rank.
-#
-# Cluster-agnostic: the RDMA plumbing, node placement, and the node-local weight
-# cache all come from an overlay (../gke-b200). On its own
-# this manifest has no RDMA devices, and DeepEP's inter-node all2all silently
-# falls back to TCP -- which shows up as bad throughput, not as an error.
-#
-# Sizing knobs:
-#   size: 2       nodes in the group -> DP and EP width. 1 == single node, and
-#                 the command below drops the DP flags on its own.
-#   replicas: 1   independent 16-GPU instances.
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
-  name: inkling-large
+  name: inkling
   labels:
     llm-d.ai/accelerator-variant: gpu
     llm-d.ai/accelerator-vendor: nvidia
-    llm-d.ai/guide: inkling-large-agg
+    llm-d.ai/guide: inkling-agg
     llm-d.ai/inference-serving: "true"
-    llm-d.ai/model: inkling-large
+    llm-d.ai/model: inkling
     llm-d.ai/role: decode
 spec:
   replicas: 1
@@ -44,9 +22,9 @@ spec:
         labels:
           llm-d.ai/accelerator-variant: gpu
           llm-d.ai/accelerator-vendor: nvidia
-          llm-d.ai/guide: inkling-large-agg
+          llm-d.ai/guide: inkling-agg
           llm-d.ai/inference-serving: "true"
-          llm-d.ai/model: inkling-large
+          llm-d.ai/model: inkling
           llm-d.ai/role: decode
       spec:
         # No nodeSelector or affinity here: which nodes carry 8xB200 and what the
@@ -89,8 +67,6 @@ spec:
                 export VLLM_SSM_CONV_STATE_LAYOUT=DS
                 export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
 
-                export VLLM_WORKER_MULTIPROC_METHOD=spawn
-
                 # Decode-only steps are what cudagraphs pay off on: a full batch
                 # proposes SPEC_TOKENS MTP drafts plus the verified token per
                 # sequence. Tied to SPEC_TOKENS rather than hardcoded.
@@ -104,7 +80,6 @@ spec:
                   --tool-call-parser inkling \
                   --enable-auto-tool-choice \
                   --gpu-memory-utilization 0.9 \
-                  --max-model-len 300000 \
                   --max-num-seqs "${MAX_SEQS}" \
                   --max-num-batched-tokens "${MAX_BATCHED_TOKENS}" \
                   --max-cudagraph-capture-size "${MAX_CUDAGRAPH_SIZE}" \
@@ -199,10 +174,6 @@ spec:
               - name: modelserver
                 containerPort: 8000
                 protocol: TCP
-              # DP rendezvous and per-step coordination between the two pods.
-              - name: dp-rpc
-                containerPort: 5555
-                protocol: TCP
             # The per-NIC RDMA extended resources are cluster-specific and are
             # added by the overlay (rdma-networking.yaml on the GKE one).
             resources:
@@ -215,15 +186,6 @@ spec:
                 memory: 512Gi
                 ephemeral-storage: 1Ti
                 nvidia.com/gpu: "8"
-            securityContext:
-              # IBGDA needs to pin and map device memory from userspace.
-              privileged: true
-              runAsUser: 0
-              runAsGroup: 0
-              capabilities:
-                add:
-                  - IPC_LOCK
-                  - SYS_RAWIO
             volumeMounts:
               - name: dshm
                 mountPath: /dev/shm
@@ -231,8 +193,6 @@ spec:
                 mountPath: /var/cache/huggingface
               - name: jit-cache
                 mountPath: /var/cache/vllm
-            # 45min at 1s: a cold weight pull plus the kernel JIT. Warm nodes
-            # come up in a fraction of it.
             startupProbe:
               httpGet:
                 path: /health
@@ -256,12 +216,10 @@ spec:
               timeoutSeconds: 5
               failureThreshold: 3
         volumes:
-          # 20Gi, not the 2Gi a single-node aggregated deployment gets: TP=8
-          # plus the DeepEP/NVSHMEM buffers stage through shared memory.
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 20Gi
+              sizeLimit: 2Gi
           # Per-pod scratch by default. An overlay with node-local SSD should
           # repoint hf-cache at it so ~592GB of weights is pulled once per node
           # rather than once per pod -- the GKE overlay does, in node-cache.yaml.
@@ -270,19 +228,17 @@ spec:
           - name: jit-cache
             emptyDir: {}
 ---
-# Direct access for smoke tests. The EPP routes to pod IPs via the
-# InferencePool, so it does not go through this Service. It fronts both DP
-# ranks, which is fine precisely because hybrid LB gives each one an API server.
+# Direct access.
 apiVersion: v1
 kind: Service
 metadata:
-  name: inkling-large-agg-svc
+  name: inkling-agg-svc
   labels:
-    llm-d.ai/model: inkling-large
+    llm-d.ai/model: inkling
 spec:
   selector:
-    llm-d.ai/guide: inkling-large-agg
-    llm-d.ai/model: inkling-large
+    llm-d.ai/guide: inkling-agg
+    llm-d.ai/model: inkling
     llm-d.ai/role: decode
   ports:
     - name: http
