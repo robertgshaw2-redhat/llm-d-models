@@ -3,22 +3,22 @@ kind: Deployment
 metadata:
   name: qwen3
   labels:
+    llm-d.ai/guide: qwen3.8-27b-agg
+    llm-d.ai/model: qwen3.8-27b
     llm-d.ai/role: decode
-    llm-d.ai/model: qwen3
-    llm-d.ai/guide: qwen3
 spec:
   replicas: 1
   selector:
     matchLabels:
+      llm-d.ai/guide: qwen3.8-27b-agg
+      llm-d.ai/model: qwen3.8-27b
       llm-d.ai/role: decode
-      llm-d.ai/model: qwen3
-      llm-d.ai/guide: qwen3
   template:
     metadata:
       labels:
+        llm-d.ai/guide: qwen3.8-27b-agg
+        llm-d.ai/model: qwen3.8-27b
         llm-d.ai/role: decode
-        llm-d.ai/model: qwen3
-        llm-d.ai/guide: qwen3
     spec:
       containers:
         - name: modelserver
@@ -26,45 +26,42 @@ spec:
           imagePullPolicy: Always
           command: ["vllm", "serve"]
           args:
-            - 'Qwen/Qwen3-4B-Thinking-2507'
-            - '--tensor-parallel-size=1'
-            - '--max-model-len=260000'
+            - "$MODEL"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser=qwen3_coder"
+            - "--reasoning-parser=qwen3"
+            - "--mm-encoder-tp-mode=data"
+            - "--speculative-config.method=mtp"
+            - "--speculative-config.num_speculative_tokens=3
           ports:
             - name: modelserver
               containerPort: 8000
               protocol: TCP
           env:
+            - name: MODEL
+              value: ""
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: llm-d-hf-token
                   key: HF_TOKEN
-            - name: VLLM_USE_V2_MODEL_RUNNER
-              value: "1"
-            - name: FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED
-              value: "1"
             - name: TORCH_CPP_LOG_LEVEL
               value: "ERROR"
-            # Cache locations, mounted from the `hf-cache` / `jit-cache` volumes
-            # below. Base backs those with emptyDir; see ../cks-h200 for
-            # the node-local NVMe variant.
             - name: HF_HUB_CACHE
               value: /var/cache/huggingface
             - name: VLLM_CACHE_ROOT
               value: /var/cache/vllm/vllm
             - name: FLASHINFER_WORKSPACE_BASE
               value: /var/cache/vllm/flashinfer
-            - name: DO_NOT_TRACK
-              value: "1"
           resources:
             limits:
-              cpu: "16"
-              memory: 64Gi
-              nvidia.com/gpu: 2
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: 1
             requests:
-              cpu: "16"
-              memory: 64Gi
-              nvidia.com/gpu: 2
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: 1
           volumeMounts:
             - mountPath: /var/cache/huggingface
               name: hf-cache
@@ -80,8 +77,6 @@ spec:
               port: modelserver
             initialDelaySeconds: 30
             periodSeconds: 30
-            # 60min — covers a cold weight pull. Pods that find a warm cache
-            # come up far faster.
             failureThreshold: 120
             timeoutSeconds: 5
           livenessProbe:
@@ -99,8 +94,6 @@ spec:
             timeoutSeconds: 2
             failureThreshold: 3
       volumes:
-        # Per-pod scratch by default; ../cks-h200 repoints these at
-        # node-local NVMe.
         - name: hf-cache
           emptyDir: {}
         - name: jit-cache
@@ -112,19 +105,16 @@ spec:
         - name: vllm-config
           emptyDir: {}
 ---
+# Direct access.
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen3-svc
-  labels:
-    llm-d.ai/model: qwen3
+  name: qwen3.8-27b-svc
 spec:
   selector:
-    llm-d.ai/role: decode
-    llm-d.ai/model: qwen3
-    llm-d.ai/guide: qwen3
+    llm-d.ai/guide: qwen3.8-27b
   ports:
     - name: http
-      port: 8000
+      port: 80
       targetPort: modelserver
       protocol: TCP

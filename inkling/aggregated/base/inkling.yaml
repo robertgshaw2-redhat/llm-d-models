@@ -34,8 +34,6 @@ spec:
                 export VLLM_SSM_CONV_STATE_LAYOUT=DS
                 export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
 
-                uv pip install --system instanttensor
-
                 exec vllm serve "${MODEL}" \
                   --port 8000 \
                   --disable-access-log-for-endpoints=/health,/metrics,/v1/models \
@@ -46,19 +44,16 @@ spec:
                   --enable-auto-tool-choice \
                   --max-num-batched-tokens "${MAX_BATCHED_TOKENS}" \
                   --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD}" \
-                  --tensor-parallel-size "${TP_SIZE}" \
+                  --tensor-parallel-size 8 \
                   --enable-expert-parallel \
                   --moe-backend "${MOE_BACKEND}" \
                   --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
-                  --no-enable-flashinfer-autotune \
-                  --load-format instanttensor
+                  --no-enable-flashinfer-autotune
             env:
               - name: MODEL
                 value: "thinkingmachines/Inkling-NVFP4"
               - name: MOE_BACKEND
                 value: "auto"
-              - name: TP_SIZE
-                value: "8"
               - name: MAX_BATCHED_TOKENS
                 value: "16384"
               - name: LONG_PREFILL_TOKEN_THRESHOLD
@@ -70,13 +65,8 @@ spec:
                   secretKeyRef:
                     name: llm-d-hf-token
                     key: HF_TOKEN
-              - name: TRITON_LIBCUDA_PATH
-                value: /usr/local/nvidia/lib64
               - name: TORCH_CPP_LOG_LEVEL
                 value: ERROR
-              # Weight and JIT cache locations. What backs them is the volumes'
-              # business below -- per-pod scratch here, node-local SSD once an
-              # overlay repoints them.
               - name: HF_HUB_CACHE
                 value: /var/cache/huggingface
               - name: VLLM_CACHE_ROOT
@@ -85,8 +75,6 @@ spec:
                 value: /var/cache/vllm/flashinfer
               - name: CUDA_CACHE_PATH
                 value: /var/cache/vllm/cuda
-              - name: DO_NOT_TRACK
-                value: "1"
             ports:
               - name: modelserver
                 containerPort: 8000
