@@ -127,10 +127,6 @@ spec:
                 value: eth0
               - name: NCCL_SOCKET_IFNAME
                 value: eth0
-              - name: NCCL_TUNER_PLUGIN
-                value: none
-              - name: NCCL_NET_PLUGIN
-                value: ""
               - name: VLLM_NIXL_SIDE_CHANNEL_HOST
                 valueFrom:
                   fieldRef:

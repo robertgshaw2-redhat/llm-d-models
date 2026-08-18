@@ -90,12 +90,12 @@ results dest="./results":
 
 # Run lm-evaluation-harness from the lm-eval pod against the deployment's
 # OpenAI-compatible chat endpoint. Args: [tasks] [concurrency].
-lmeval limit="1300" concurrency="100":
+lmeval limit="1300" concurrency="100" fewshot="20":
     kubectl exec -n {{namespace}} deploy/{{deploy}} -- \
         lm_eval \
             --model local-completions \
             --model_args "model={{model}},base_url={{url}}/v1/completions,num_concurrent={{concurrency}},tokenized_requests=False,trust_remote_code=True" \
-            --tasks gsm8k --limit {{limit}} --num_fewshot 20
+            --tasks gsm8k --limit {{limit}} --num_fewshot {{fewshot}}
 
 install-lmeval:
     kubectl exec -n {{namespace}} deploy/{{deploy}} -- pip install lm-eval[api] transformers

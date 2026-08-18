@@ -49,9 +49,9 @@ spec:
                   --kv-cache-dtype fp8 \
                   --mamba-backend triton \
                   --mamba-ssm-cache-dtype float32 \
-                  --prefix-match-unit 32
-
-                  # --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
+                  --prefix-match-unit 32 \
+                  --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}"
+                  
             env:
               - name: MODEL
                 value: "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"
@@ -78,10 +78,6 @@ spec:
                 value: /var/cache/vllm/flashinfer
               - name: CUDA_CACHE_PATH
                 value: /var/cache/vllm/cuda
-              - name: NCCL_TUNER_PLUGIN
-                value: none
-              - name: NCCL_NET_PLUGIN
-                value: ""
             ports:
               - name: modelserver
                 containerPort: 8000
