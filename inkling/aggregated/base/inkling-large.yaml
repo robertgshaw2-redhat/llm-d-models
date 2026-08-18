@@ -16,7 +16,7 @@ spec:
     # A DP group is a single collective: losing one rank wedges the other, so
     # restart the whole group rather than leaving a half-formed one behind.
     restartPolicy: RecreateGroupOnPodRestart
-    size: 1
+    size: 2
     workerTemplate:
       metadata:
         labels:
