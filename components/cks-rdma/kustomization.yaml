@@ -1,0 +1,18 @@
+# CoreWeave InfiniBand for every Deployment in the consuming overlay.
+#
+# Model-agnostic, like ../coreweave-node-cache, and used the same way -- the two
+# are the only cluster-specific facts a CoreWeave overlay needs:
+#   components:
+#     - ../../../components/coreweave-node-cache
+#     - ../../../components/coreweave-infiniband
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Untargeted by name, so prefill and decode both pick it up (and a third role
+# added to a base gets it for free). Strategic merge rather than JSON 6902:
+# Deployment is a built-in kustomize has a schema for, so the containers list
+# merges by name instead of being replaced.
+patches:
+  - path: infiniband.yaml
+    target:
+      kind: Deployment

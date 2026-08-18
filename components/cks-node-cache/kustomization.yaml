@@ -1,0 +1,21 @@
+# Repoints the `hf-cache` / `jit-cache` volumes at CoreWeave node-local NVMe.
+#
+# Every vLLM base in this repo declares those two volumes as emptyDir, so this
+# component is the single place the /mnt/local paths are written down -- which is
+# what makes the cache actually shared: all pods on a node, aggregated and
+# disaggregated alike, must agree on the path for cache-warmer.yaml to be worth
+# running.
+#
+# Used by the cks-h200 overlays under each model.
+# Pull it into an overlay with:
+#   components:
+#     - ../../../components/coreweave-node-cache
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Untargeted by name: every Deployment in the consuming overlay gets the patch
+# (one per aggregated model, prefill + decode for the disaggregated pair).
+patches:
+  - path: node-local-cache.yaml
+    target:
+      kind: Deployment
