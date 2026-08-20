@@ -4,18 +4,18 @@
 namespace := env_var_or_default("NAMESPACE", "default")
 deploy    := "aiperf-agentx"
 # model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
-# model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
-model     := env_var_or_default("MODEL", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4")
+model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
+# model     := env_var_or_default("MODEL", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4")
 # url       := env_var_or_default("URL", "http://kimik3-epp:80")
-# url       := env_var_or_default("URL", "http://inkling-epp:80")
-url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
+url       := env_var_or_default("URL", "http://inkling-epp:80")
+# url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
 duration  := "300"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-deployment := "inkling-small"
+deployment := "inkling"
 
 default:
     @just --list
@@ -59,7 +59,7 @@ smoke concurrency:
         --unsafe-override \
         --url {{url}} \
         --model {{model}} \
-        --max-context-length 128000 \
+        --max-context-length 256000 \
         --endpoint-type chat \
         --streaming \
         --use-server-token-count \
@@ -73,15 +73,15 @@ smoke concurrency:
 # Sweep over a range of concurrency values using the smoke config (fast, marks
 # results invalid via --unsafe-override). Args: [duration-seconds].
 sweep:
+    just smoke 4
+    sleep 10
+    just smoke 8
+    sleep 10
     just smoke 16
     sleep 10
     just smoke 32
     sleep 10
     just smoke 64
-    sleep 10
-    just smoke 128
-    sleep 10
-    just smoke 256
 
 # Copy benchmark artifacts out of the runner to a local directory (default ./results).
 results dest="./results":
@@ -118,22 +118,91 @@ bench concurrency="16" num_prompts="":
     set -euo pipefail
     num_prompts="{{num_prompts}}"
     if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 10 )); fi
-    echo "==> ISL=10000 OSL=1 CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
-    kubectl exec -n {{namespace}} deploy/{{deploy}} -- \
+    echo "==> ISL=1 OSL=100 CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
+    kubectl exec -n {{namespace}} deploy/{{deployment}} -- \
       vllm bench serve \
         --backend vllm \
         --base-url http://localhost:8000 \
         --model {{model}} \
         --trust-remote-code \
         --dataset-name random \
-        --random-input-len 10000 \
-        --random-output-len 1 \
+        --random-input-len 1 \
+        --random-output-len 100 \
         --random-range-ratio 0 \
         --ignore-eos \
         --num-prompts "$num_prompts" \
         --max-concurrency {{concurrency}} \
         --percentile-metrics ttft,tpot,itl,e2el \
         --seed 42
+
+# vllm bench serve against the sonnet dataset that ships with vLLM
+# (benchmarks/sonnet.txt), run from inside the serving pod against its own
+# localhost:8000, same as `bench` above.
+#
+# What this measures that `bench` does not: `bench` sends random token ids,
+# which are word salad -- fine for pinning token counts, useless for anything
+# that depends on the text being predictable (a draft model has nothing to
+# predict). The sonnet sampler instead fills each prompt with real lines of
+# verse sampled with replacement until it hits ISL, so the token lengths are
+# still pinned exactly but the content is English. Cheaper to set up than the
+# `pride` sweep below -- no PVC, no preprocess Job -- at the cost of prompts
+# that differ run to run, since the lines are resampled every time.
+#
+# --backend openai-chat: the sonnet sampler formats prompts through the model's
+# chat template, so the request has to go to /v1/chat/completions. That is also
+# the path guidellm and lm-eval drive, which keeps the numbers comparable.
+#
+# sonnet_prefix_len is the number of leading tokens every prompt shares. vLLM's
+# default is 200 and it is kept here because the aggregated Deployments run with
+# prefix caching on -- a zero-length prefix would measure a cache that never
+# hits. Set it to 0 to benchmark a cold path.
+
+sonnet_isl := "28"
+sonnet_osl := "1000"
+sonnet_prefix_len := "200"
+
+# Sonnet-dataset vllm bench serve. Args: [concurrency] [num-prompts].
+sonnet concurrency="16" num_prompts="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    num_prompts="{{num_prompts}}"
+    if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 10 )); fi
+    echo "==> ISL={{sonnet_isl}} OSL={{sonnet_osl}} PREFIX={{sonnet_prefix_len}} CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
+
+    # -i so the heredoc reaches `bash -s` in the pod; everything just needs to
+    # interpolate is passed as a positional parameter, so the remote script
+    # itself is free of local expansions.
+    kubectl exec -i -n {{namespace}} deploy/{{deployment}} -- vllm bench serve \
+      --backend openai-chat \
+      --base-url http://localhost:8000 \
+      --endpoint /v1/chat/completions \
+      --model {{model}} \
+      --trust-remote-code \
+      --dataset-name sonnet \
+      --dataset-path /tmp/sonnet.txt \
+      --sonnet-input-len {{sonnet_isl}} \
+      --sonnet-output-len {{sonnet_osl}} \
+      --sonnet-prefix-len {{sonnet_prefix_len}} \
+      --num-prompts {{num_prompts}} \
+      --max-concurrency {{concurrency}} \
+      --request-rate inf \
+      --ignore-eos \
+      --percentile-metrics ttft,tpot,itl,e2el \
+      --metric-percentiles 50,90,95
+
+# Sweep concurrencies through the sonnet benchmark, one at a time -- two load
+# generators aimed at one deployment would just measure each other.
+# Args: [concurrency...] (def. 1 4 8 16 32).
+sonnet-sweep *concurrencies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    points=({{concurrencies}})
+    if (( ${#points[@]} == 0 )); then points=(1 4 8 16 32); fi
+    for c in "${points[@]}"; do
+      just sonnet "$c"
+      echo
+      sleep 10
+    done
 
 logs:
     kubectl logs -n {{namespace}} deploy/{{deploy}} -f

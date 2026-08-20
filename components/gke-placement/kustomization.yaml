@@ -1,10 +1,11 @@
-# B200 node selection + GCE topology packing for every LeaderWorkerSet in the
-# consuming overlay.
+# B200 node selection for every LeaderWorkerSet and every Deployment in the
+# consuming overlay, plus GCE topology packing for the LWS groups.
 #
 # This replaces the per-role placement-prefill.yaml / placement-decode.yaml that
 # each GKE overlay used to carry: with the LWS group-key doing the work in the
 # affinity, one untargeted patch covers prefill, decode, and the aggregated
-# single-role deployment. See placement.yaml.
+# single-role workload. See placement.yaml -- and placement-deployment.yaml for
+# why the Deployment form carries the nodeSelector but not the affinity.
 #
 # Pull it into an overlay with:
 #   components:
@@ -16,3 +17,6 @@ patches:
   - path: placement.yaml
     target:
       kind: LeaderWorkerSet
+  - path: placement-deployment.yaml
+    target:
+      kind: Deployment

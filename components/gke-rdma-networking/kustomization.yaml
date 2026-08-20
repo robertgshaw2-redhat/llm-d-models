@@ -1,8 +1,11 @@
-# GKE multi-networking (RoCE) for every LeaderWorkerSet in the consuming overlay.
+# GKE multi-networking (RoCE) for every LeaderWorkerSet and every Deployment in
+# the consuming overlay.
 #
-# Model-agnostic on purpose: the patch names no model, no role, and no LWS --
-# it only assumes the vLLM container is containers[0], which it `test`s. That is
-# what lets one copy serve inkling-large, kimi-k3, and whatever comes next.
+# Model-agnostic on purpose: the patches name no model, no role, and no workload
+# -- the LWS one only assumes the vLLM container is containers[0], which it
+# `test`s, and the Deployment one merges into the container named `modelserver`.
+# That is what lets one copy serve inkling-large, kimi-k3, and whatever comes
+# next.
 #
 # Pull it into an overlay with:
 #   components:
@@ -10,10 +13,15 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
-# Untargeted by name or label: every LeaderWorkerSet in the consuming overlay
-# gets the patch, prefill and decode alike. A base that should *not* have RDMA
-# does not belong in a GKE wide-EP overlay in the first place.
+# Untargeted by name or label: every workload in the consuming overlay gets the
+# patch, prefill and decode alike. A base that should *not* have RDMA does not
+# belong in a GKE wide-EP overlay in the first place. The two entries are the
+# same change in the two shapes kustomize needs; whichever kind the overlay does
+# not use matches nothing.
 patches:
   - path: rdma-networking.yaml
     target:
       kind: LeaderWorkerSet
+  - path: rdma-networking-deployment.yaml
+    target:
+      kind: Deployment

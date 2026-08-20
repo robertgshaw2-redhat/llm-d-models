@@ -1,0 +1,219 @@
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: glm5.2-decode
+  labels:
+    llm-d.ai/guide: glm5.2-disagg
+    llm-d.ai/model: glm5.2
+    llm-d.ai/role: decode
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 1
+    workerTemplate:
+      metadata:
+        labels:
+          llm-d.ai/guide: glm5.2-disagg
+          llm-d.ai/model: glm5.2
+          llm-d.ai/role: decode
+      spec:
+        initContainers:
+          - name: routing-proxy
+            args:
+              - --port=8000
+              - --vllm-port=8200
+              - --data-parallel-size=8
+              - --kv-connector=nixlv2
+              - --zap-log-level=1
+              - --secure-proxy=false
+            image: ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.9.0
+            imagePullPolicy: Always
+            ports:
+              - containerPort: 8000
+                name: rank0
+                protocol: TCP
+              - containerPort: 8001
+                name: rank1
+                protocol: TCP
+              - containerPort: 8002
+                name: rank2
+                protocol: TCP
+              - containerPort: 8003
+                name: rank3
+                protocol: TCP
+              - containerPort: 8004
+                name: rank4
+                protocol: TCP
+              - containerPort: 8005
+                name: rank5
+                protocol: TCP
+              - containerPort: 8006
+                name: rank6
+                protocol: TCP
+              - containerPort: 8007
+                name: rank7
+                protocol: TCP
+            restartPolicy: Always
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+        containers:
+          - name: vllm
+            image: docker.io/vllm/vllm-openai:nightly
+            securityContext:
+              capabilities:
+                add:
+                  - IPC_LOCK
+                  - SYS_RAWIO
+              runAsGroup: 0
+              runAsUser: 0
+            imagePullPolicy: Always
+            command:
+              - /bin/bash
+              - -c
+            args:
+              - |-
+                # Clear /dev/shm on start to prevent running out of space when crashes occur
+                # https://github.com/llm-d/llm-d/issues/352
+                find /dev/shm -type f -delete
+
+                #################
+                # RUN vLLM prefill workers via DP Supervisor
+                # The supervisor automatically assigns CUDA_VISIBLE_DEVICES and
+                # --data-parallel-rank to each child process based on local_rank.
+                #################
+
+                START_RANK=$(( ${LWS_WORKER_INDEX:-0} * DP_SIZE_LOCAL ))
+                MAX_BATCHED_TOKENS=$(( MAX_SEQS * (SPEC_TOKENS + 1) ))
+                
+                exec vllm serve \
+                  RedHatAI/GLM-5.2-NVFP4-FP8 \
+                  --port 8200 \
+                  --disable-access-log-for-endpoints=/health,/metrics \
+                  --data-parallel-multi-port-external-lb \
+                  --data-parallel-supervisor-port=8208 \
+                  --enable-expert-parallel \
+                  --tensor-parallel-size $TP_SIZE \
+                  --max-num-seqs ${MAX_SEQS} \
+                  --max-num-batched-tokens ${MAX_BATCHED_TOKENS} \
+                  --max-cudagraph-capture-size "${MAX_BATCHED_TOKENS}" \
+                  --data-parallel-start-rank $START_RANK \
+                  --data-parallel-size $((LWS_GROUP_SIZE * DP_SIZE_LOCAL)) \
+                  --data-parallel-size-local $DP_SIZE_LOCAL \
+                  --data-parallel-address ${LWS_LEADER_ADDRESS} \
+                  --kv_transfer_config '{"kv_connector":"NixlConnector",
+                                          "kv_role":"kv_consumer",
+                                          "kv_load_failure_policy":"fail"}' \
+                  --all2all-backend flashinfer_nvlink_one_sided \
+                  --kv-cache-dtype fp8 \
+                  --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
+                  --load-format instantensor
+            env:
+              - name: HF_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: llm-d-hf-token
+                    key: HF_TOKEN
+              - name: SPEC_TOKENS
+                value: "3"
+              - name: MAX_SEQS
+                value: "64"
+              - name: DP_SIZE_LOCAL
+                value: "8"
+              - name: TP_SIZE
+                value: "1"
+              - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.podIP
+              - name: TORCH_CPP_LOG_LEVEL
+                value: ERROR
+              - name: HF_HUB_CACHE
+                value: /var/cache/huggingface
+              - name: VLLM_CACHE_ROOT
+                value: /var/cache/vllm/vllm
+              - name: FLASHINFER_WORKSPACE_BASE
+                value: /var/cache/vllm/flashinfer
+              - name: CUDA_CACHE_PATH
+                value: /var/cache/vllm/cuda
+            ports:
+              - containerPort: 8200
+                name: vllm-rank0
+                protocol: TCP
+              - containerPort: 8201
+                name: vllm-rank1
+                protocol: TCP
+              - containerPort: 8202
+                name: vllm-rank2
+                protocol: TCP
+              - containerPort: 8203
+                name: vllm-rank3
+                protocol: TCP
+              - containerPort: 8204
+                name: vllm-rank4
+                protocol: TCP
+              - containerPort: 8205
+                name: vllm-rank5
+                protocol: TCP
+              - containerPort: 8206
+                name: vllm-rank6
+                protocol: TCP
+              - containerPort: 8207
+                name: vllm-rank7
+                protocol: TCP
+              - containerPort: 8208
+                name: supervisor
+                protocol: TCP
+
+            startupProbe:
+              httpGet:
+                path: /health
+                port: supervisor
+              initialDelaySeconds: 0
+              periodSeconds: 1
+              timeoutSeconds: 5
+              failureThreshold: 2700
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: supervisor
+              periodSeconds: 30
+              timeoutSeconds: 5
+              failureThreshold: 3
+            readinessProbe:
+              httpGet:
+                path: /readyz
+                port: supervisor
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+            resources:
+              limits:
+                ephemeral-storage: 1Ti
+                memory: 512Gi
+                nvidia.com/gpu: "8"
+              requests:
+                cpu: 32
+                ephemeral-storage: 1Ti
+                memory: 512Gi
+                nvidia.com/gpu: "8"
+            volumeMounts:
+              - name: dshm
+                mountPath: /dev/shm
+              - name: hf-cache
+                mountPath: /var/cache/huggingface
+              - name: jit-cache
+                mountPath: /var/cache/vllm
+              - name: profiles
+                mountPath: /profiles
+        volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
+          - name: hf-cache
+            emptyDir: {}
+          - name: jit-cache
+            emptyDir: {}
+          - name: profiles
+            emptyDir: {}

@@ -1,5 +1,5 @@
-# Weight cache on the GKE node's ephemeral SSD, for every LeaderWorkerSet in the
-# consuming overlay. The GKE counterpart of ../coreweave-node-cache (that one
+# Weight cache on the GKE node's ephemeral SSD, for every LeaderWorkerSet and
+# every Deployment in the consuming overlay. The GKE counterpart of ../coreweave-node-cache (that one
 # patches Deployments and uses /mnt/local; the paths differ per cluster, which is
 # the whole reason they are two components).
 #
@@ -17,7 +17,13 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
+# Both workload kinds, because the bases use both: the wide-EP models run as a
+# LeaderWorkerSet and the single-node ones as a Deployment. A target that
+# matches nothing in a given overlay is a no-op, so listing both is free.
 patches:
   - path: node-cache.yaml
     target:
       kind: LeaderWorkerSet
+  - path: node-cache-deployment.yaml
+    target:
+      kind: Deployment

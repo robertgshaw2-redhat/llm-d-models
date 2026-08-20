@@ -49,7 +49,7 @@ spec:
                   --kv-cache-dtype fp8 \
                   --mamba-backend triton \
                   --mamba-ssm-cache-dtype float32 \
-                  --prefix-match-unit 32 \
+                  --prefix-match-unit 16 \
                   --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}"
                   
             env:

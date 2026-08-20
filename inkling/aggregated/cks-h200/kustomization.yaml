@@ -7,20 +7,26 @@ resources:
 components:
   - ../../../components/cks-node-cache
 
+# Model knobs for this cluster. A strategic merge patch, not JSON 6902: with a
+# Deployment kustomize can merge the env list by name, so this does not depend
+# on where MODEL and MOE_BACKEND sit in the base's list -- which matters,
+# because the components above merge their own env vars in ahead of them.
 patches:
   - target:
-      kind: LeaderWorkerSet
+      kind: Deployment
       name: inkling
     patch: |-
-      - op: test
-        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/0/name
-        value: MODEL
-      - op: replace
-        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/0/value
-        value: thinkingmachines/Inkling-NVFP4
-      - op: test
-        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/name
-        value: MOE_BACKEND
-      - op: replace
-        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/value
-        value: "auto"
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: inkling
+      spec:
+        template:
+          spec:
+            containers:
+              - name: modelserver
+                env:
+                  - name: MODEL
+                    value: thinkingmachines/Inkling-NVFP4
+                  - name: MOE_BACKEND
+                    value: "auto"
