@@ -1,0 +1,20 @@
+# Where a Deployment's pods land on this cluster.
+#
+# nodeSelector picks the B200 pool by GKE's accelerator label, exactly as in
+# placement.yaml. What is deliberately missing is the group-packing podAffinity:
+# it exists to keep the pods of one LWS group inside a GCE topology block so an
+# inter-node all2all stays on the short paths, and it selects the group with
+# `matchLabelKeys: [leaderworkerset.sigs.k8s.io/group-key]`. A Deployment has no
+# group -- each pod is a self-contained single-node engine and its collectives
+# never leave the node -- so there is nothing to pack and no key to pack by.
+# `pod-template-hash` is a revision marker, not a group, and using it here would
+# pull unrelated replicas together for no benefit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-b200

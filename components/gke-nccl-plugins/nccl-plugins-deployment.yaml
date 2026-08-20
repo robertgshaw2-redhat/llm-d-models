@@ -1,0 +1,25 @@
+# The Deployment form of nccl-plugins.yaml -- same two env vars, same reasons.
+# Read that file for what GKE's preloaded plugins break.
+#
+# Strategic merge rather than JSON 6902: Deployment is a built-in kustomize has
+# a schema for, so the env list merges by name into the container named
+# `modelserver` instead of replacing anything. If a base ever names its vLLM
+# container something else, kustomize will *append* this as a second container
+# rather than fail -- so keep every Deployment base's container called
+# `modelserver`, which is the same assumption ../cks-rdma makes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    spec:
+      containers:
+        - name: modelserver
+          env:
+            - name: NCCL_TUNER_PLUGIN
+              value: none
+            # Empty, not "none": empty means "load no net plugin", and NCCL
+            # falls back to its built-in transports.
+            - name: NCCL_NET_PLUGIN
+              value: ""

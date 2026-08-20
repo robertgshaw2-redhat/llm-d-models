@@ -1,0 +1,26 @@
+# The Deployment form of node-cache.yaml -- same hostPath, same reasoning; only
+# the shape of the patch differs.
+#
+# Deployment is a built-in, so kustomize has a schema for it and a strategic
+# merge patch merges the volume list by name instead of replacing it. That is
+# why this file selects `hf-cache` by name rather than by the list index the
+# JSON 6902 patch next door has to hardcode.
+#
+# `emptyDir: null` deletes the base's per-pod scratch: a volume may carry only
+# one source, so it has to go before hostPath can take its place.
+#
+# The path has to match ../../cache-warmer/overlays/gke and node-cache.yaml.
+# Change all three together.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    spec:
+      volumes:
+        - name: hf-cache
+          emptyDir: null
+          hostPath:
+            path: /mnt/stateful_partition/kube-ephemeral-ssd/shared_disk/vllm-hf-cache/
+            type: DirectoryOrCreate

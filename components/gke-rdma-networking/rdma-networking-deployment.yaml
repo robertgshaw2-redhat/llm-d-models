@@ -1,0 +1,67 @@
+# The Deployment form of rdma-networking.yaml: the same three pieces --
+# annotations, the per-NIC extended resources, and the UCX RoCE setting -- with
+# nothing else changed. Read that file for why all three are needed and what
+# quietly breaks when one is missing.
+#
+# Strategic merge rather than JSON 6902: Deployment is a built-in kustomize has
+# a schema for, so the annotations, the env list, and the resource maps all
+# merge instead of replacing what the base declared. The container is matched by
+# name -- `modelserver` in every Deployment base here. A base naming it
+# something else gets this appended as a second container rather than a build
+# failure, which is the one thing the JSON 6902 form catches and this one
+# cannot.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    metadata:
+      annotations:
+        networking.gke.io/default-interface: eth0
+        networking.gke.io/interfaces: |
+          [
+            {"interfaceName":"eth0","network":"default"},
+            {"interfaceName":"eth2","network":"rdma-0"},
+            {"interfaceName":"eth3","network":"rdma-1"},
+            {"interfaceName":"eth4","network":"rdma-2"},
+            {"interfaceName":"eth5","network":"rdma-3"},
+            {"interfaceName":"eth6","network":"rdma-4"},
+            {"interfaceName":"eth7","network":"rdma-5"},
+            {"interfaceName":"eth8","network":"rdma-6"},
+            {"interfaceName":"eth9","network":"rdma-7"}
+          ]
+    spec:
+      containers:
+        - name: modelserver
+          env:
+            - name: UCX_IB_ROCE_REACHABILITY_MODE
+              value: all
+          # `networking.gke.io.networks/rdma-N` -- a dot before `networks`, not a
+          # slash: a resource name is `<domain>/<name>` and gets exactly one
+          # slash, so the whole `networking.gke.io.networks` part is the domain.
+          # This is the same key rdma-networking.yaml writes, where the JSON
+          # pointer's `~1` is what escapes the single slash.
+          #
+          # "0" is not a typo either: the value is a marker telling the GKE
+          # network plugin to inject the interface, not a count. Requests and
+          # limits have to agree -- extended resources are not overcommittable.
+          resources:
+            requests:
+              networking.gke.io.networks/rdma-0: "0"
+              networking.gke.io.networks/rdma-1: "0"
+              networking.gke.io.networks/rdma-2: "0"
+              networking.gke.io.networks/rdma-3: "0"
+              networking.gke.io.networks/rdma-4: "0"
+              networking.gke.io.networks/rdma-5: "0"
+              networking.gke.io.networks/rdma-6: "0"
+              networking.gke.io.networks/rdma-7: "0"
+            limits:
+              networking.gke.io.networks/rdma-0: "0"
+              networking.gke.io.networks/rdma-1: "0"
+              networking.gke.io.networks/rdma-2: "0"
+              networking.gke.io.networks/rdma-3: "0"
+              networking.gke.io.networks/rdma-4: "0"
+              networking.gke.io.networks/rdma-5: "0"
+              networking.gke.io.networks/rdma-6: "0"
+              networking.gke.io.networks/rdma-7: "0"
