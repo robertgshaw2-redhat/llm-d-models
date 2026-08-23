@@ -1,30 +1,4 @@
 # GKE multi-networking: give each pod its eight per-GPU RDMA NICs.
-#
-# Applied to every LeaderWorkerSet in the consuming overlay -- see
-# kustomization.yaml. Nothing below names a model, so aggregated and
-# disaggregated bases share this one copy.
-#
-# Three pieces that only work together:
-#   - the networking.gke.io annotations attaching eth2..eth9 to the rdma-0..7
-#     networks (eth0 stays the pod network, and the control plane -- DP/Gloo
-#     rendezvous, NVSHMEM bootstrap -- stays on it; see the base manifests)
-#   - a request for the matching networking.gke.io.networks/rdma-N extended
-#     resource, one per NIC. "0" is not a typo: the value is a marker telling the
-#     GKE network plugin to inject the interface, not a count of anything.
-#   - UCX_IB_ROCE_REACHABILITY_MODE=all, because GKE RDMA is RoCE rather than
-#     InfiniBand, so UCX has to probe every path instead of trusting a subnet.
-#
-# Drop any one of them and the pod still starts -- DeepEP and the NIXL KV
-# transfer just quietly fall back to TCP, which shows up as bad decode
-# throughput rather than as an error.
-#
-# JSON 6902 rather than a strategic merge patch, here and in every other GKE
-# patch: LeaderWorkerSet is a CRD kustomize has no schema for, so a merge patch
-# *replaces* the containers list instead of merging into it, which silently
-# drops the image, the command, and every env var. The `test` op guards the one
-# hardcoded list index -- a base that puts something other than vLLM first
-# fails the build here instead of getting the NICs attached to the wrong
-# container.
 - op: test
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/name
   value: vllm
@@ -52,55 +26,56 @@
     name: UCX_IB_ROCE_REACHABILITY_MODE
     value: all
 
-# `~1` is the JSON-pointer escape for the `/` in the resource name.
+# `~1` is the JSON-pointer escape for the `/` in the resource name. The value is
+# "1" per NIC -- see the top of this file for why "0" silently costs you RDMA.
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-0
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-1
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-2
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-3
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-4
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-5
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-6
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/networking.gke.io.networks~1rdma-7
-  value: "0"
+  value: "1"
 
 # Mirrored into limits: extended resources are not overcommittable, so the two
 # have to agree or the kubelet rejects the pod.
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-0
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-1
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-2
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-3
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-4
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-5
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-6
-  value: "0"
+  value: "1"
 - op: add
   path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/networking.gke.io.networks~1rdma-7
-  value: "0"
+  value: "1"

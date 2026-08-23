@@ -1,10 +1,12 @@
-# helm upgrade --install inkling oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f inkling/aggregated/router.values.yaml
+
+# Deploy:
+#   helm upgrade --install glm oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f glm5.2/disaggregated/router.values.yaml
 router:
   epp:
     replicas: 1
     flags:
       ha-enable-leader-election: false
-    
+
     # The default pool is too small to fit the EPP, so let it land on a GPU
     # node instead of going Pending.
     tolerations:
@@ -12,7 +14,6 @@ router:
         operator: Equal
         value: present
         effect: NoSchedule
-
     env:
       - name: HF_TOKEN
         valueFrom:
@@ -26,18 +27,32 @@ router:
         apiVersion: llm-d.ai/v1alpha1
         kind: EndpointPickerConfig
         plugins:
+          - type: disagg-headers-handler
+          - type: always-disagg-pd-decider
+          - type: disagg-profile-handler
+            parameters:
+              deciderPluginName: always-disagg-pd-decider
+          - type: prefill-filter
+          - type: decode-filter
           - type: approx-prefix-cache-producer
           - type: inflight-load-producer
           - type: prefix-cache-affinity-filter
             parameters:
-              peakPrefillThroughput: 30000
+              peakPrefillThroughput: 20000
           - type: token-load-scorer
+          - type: active-request-scorer
           - type: max-score-picker
         schedulingProfiles:
-        - name: default
+        - name: prefill
           plugins:
+          - pluginRef: prefill-filter
           - pluginRef: prefix-cache-affinity-filter
           - pluginRef: token-load-scorer
+          - pluginRef: max-score-picker
+        - name: decode
+          plugins:
+          - pluginRef: decode-filter
+          - pluginRef: active-request-scorer
           - pluginRef: max-score-picker
 
   extraServicePorts:
@@ -50,5 +65,12 @@ router:
     type: vllm
     targetPorts:
       - number: 8000
+      - number: 8001
+      - number: 8002
+      - number: 8003
+      - number: 8004
+      - number: 8005
+      - number: 8006
+      - number: 8007
     matchLabels:
       llm-d.ai/guide: "glm5.2-disagg"

@@ -1,21 +1,25 @@
 # AIPerf AgentX-MVP benchmark against the running llm-d optimized-baseline deployment.
 #
 
-namespace := env_var_or_default("NAMESPACE", "default")
+namespace := env_var_or_default("NAMESPACE", "robshaw-dev")
 deploy    := "aiperf-agentx"
 # model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
-model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
+# model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
 # model     := env_var_or_default("MODEL", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4")
+# model     := env_var_or_default("MODEL", "RedHatAI/GLM-5.2-NVFP4-FP8")
+model     := env_var_or_default("MODEL", "ibm-granite/granite-4.0-h-small")
 # url       := env_var_or_default("URL", "http://kimik3-epp:80")
-url       := env_var_or_default("URL", "http://inkling-epp:80")
+# url       := env_var_or_default("URL", "http://inkling-epp:80")
 # url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
+url       := env_var_or_default("URL", "http://granite-epp:80")
+# url       := env_var_or_default("URL", "http://granite4-small-agg-svc:80")
 duration  := "300"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-deployment := "inkling"
+deployment := "granite"
 
 default:
     @just --list
@@ -59,7 +63,7 @@ smoke concurrency:
         --unsafe-override \
         --url {{url}} \
         --model {{model}} \
-        --max-context-length 256000 \
+        --max-context-length 128000 \
         --endpoint-type chat \
         --streaming \
         --use-server-token-count \
@@ -73,15 +77,13 @@ smoke concurrency:
 # Sweep over a range of concurrency values using the smoke config (fast, marks
 # results invalid via --unsafe-override). Args: [duration-seconds].
 sweep:
-    just smoke 4
-    sleep 10
-    just smoke 8
-    sleep 10
     just smoke 16
     sleep 10
     just smoke 32
     sleep 10
     just smoke 64
+    sleep 10
+    just smoke 128
 
 # Copy benchmark artifacts out of the runner to a local directory (default ./results).
 results dest="./results":
@@ -100,25 +102,14 @@ lmeval limit="1300" concurrency="100" fewshot="20":
 install-lmeval:
     kubectl exec -n {{namespace}} deploy/{{deploy}} -- pip install lm-eval[api] transformers
 
-# vllm bench serve at a fixed 10k input / 1 output token, run from inside the
-# inkling pod against its own localhost:8000 -- the vLLM image already ships the
-# `vllm bench` CLI, and going through loopback keeps the Service and the EPP out
-# of the numbers. 1 OSL makes this a pure prefill measurement: end-to-end
-# latency is TTFT plus one decode step.
-#
-# --random-range-ratio 0 pins every prompt at exactly 10k tokens instead of
-# sampling a range around it, and --ignore-eos keeps the 1-token output from
-# being cut shorter. Prompts are random token ids, so they share no prefix with
-# each other -- but a repeat run reuses the same seed, so bump --seed (or expect
-# prefix-cache hits) when re-running back to back.
-
 # 10k ISL / 1 OSL vllm bench serve. Args: [concurrency] [num-prompts].
-bench concurrency="16" num_prompts="":
+bench isl="10000" osl="1" concurrency="16" num_prompts="":
     #!/usr/bin/env bash
     set -euo pipefail
     num_prompts="{{num_prompts}}"
     if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 10 )); fi
-    echo "==> ISL=1 OSL=100 CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
+    echo "==> ISL={{isl}} OSL={{osl}} CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
+    echo "{{namespace}}"
     kubectl exec -n {{namespace}} deploy/{{deployment}} -- \
       vllm bench serve \
         --backend vllm \
@@ -126,14 +117,40 @@ bench concurrency="16" num_prompts="":
         --model {{model}} \
         --trust-remote-code \
         --dataset-name random \
-        --random-input-len 1 \
-        --random-output-len 100 \
-        --random-range-ratio 0 \
+        --random-input-len {{isl}} \
+        --random-output-len {{osl}} \
         --ignore-eos \
         --num-prompts "$num_prompts" \
         --max-concurrency {{concurrency}} \
         --percentile-metrics ttft,tpot,itl,e2el \
-        --seed 42
+        --seed $(date +%s)
+
+# 10k ISL / 1 OSL vllm bench serve. Args: [concurrency] [num-prompts].
+bench_prefix num_prompts="1000" rr="20":
+    kubectl exec -n {{namespace}} deploy/{{deployment}} -- \
+      vllm bench serve \
+        --backend vllm \
+        --base-url {{url}} \
+        --model {{model}} \
+        --trust-remote-code \
+        --num-prompts {{num_prompts}} \
+        --request-rate {{rr}} \
+        --percentile-metrics ttft,tpot,itl,e2el \
+        --dataset-name prefix_repetition \
+        --prefix-repetition-prefix-len 10000 \
+        --prefix-repetition-suffix-len 3000 \
+        --prefix-repetition-num-prefixes 10 \
+        --prefix-repetition-output-len 500 \
+        --seed $(date +%s)
+
+sweep_prefix:
+    just bench_prefix 1000 10
+    just bench_prefix 1000 20
+    just bench_prefix 1000 40
+    just bench_prefix 1000 60
+    just bench_prefix 1000 80
+    just bench_prefix 1000 100
+
 
 # vllm bench serve against the sonnet dataset that ships with vLLM
 # (benchmarks/sonnet.txt), run from inside the serving pod against its own

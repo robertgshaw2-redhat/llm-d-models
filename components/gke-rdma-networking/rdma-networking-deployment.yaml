@@ -43,25 +43,28 @@ spec:
           # This is the same key rdma-networking.yaml writes, where the JSON
           # pointer's `~1` is what escapes the single slash.
           #
-          # "0" is not a typo either: the value is a marker telling the GKE
-          # network plugin to inject the interface, not a count. Requests and
-          # limits have to agree -- extended resources are not overcommittable.
+          # The value has to be "1", not "0": the interface and its IP come from
+          # the annotation, but the /dev/infiniband/uverbsN nodes come from the
+          # GKE SR-IOV device plugin, which the kubelet only invokes for a
+          # non-zero request. With "0" the pod looks wired up and UCX/NIXL
+          # quietly falls back to TCP. Requests and limits have to agree --
+          # extended resources are not overcommittable.
           resources:
             requests:
-              networking.gke.io.networks/rdma-0: "0"
-              networking.gke.io.networks/rdma-1: "0"
-              networking.gke.io.networks/rdma-2: "0"
-              networking.gke.io.networks/rdma-3: "0"
-              networking.gke.io.networks/rdma-4: "0"
-              networking.gke.io.networks/rdma-5: "0"
-              networking.gke.io.networks/rdma-6: "0"
-              networking.gke.io.networks/rdma-7: "0"
+              networking.gke.io.networks/rdma-0: "1"
+              networking.gke.io.networks/rdma-1: "1"
+              networking.gke.io.networks/rdma-2: "1"
+              networking.gke.io.networks/rdma-3: "1"
+              networking.gke.io.networks/rdma-4: "1"
+              networking.gke.io.networks/rdma-5: "1"
+              networking.gke.io.networks/rdma-6: "1"
+              networking.gke.io.networks/rdma-7: "1"
             limits:
-              networking.gke.io.networks/rdma-0: "0"
-              networking.gke.io.networks/rdma-1: "0"
-              networking.gke.io.networks/rdma-2: "0"
-              networking.gke.io.networks/rdma-3: "0"
-              networking.gke.io.networks/rdma-4: "0"
-              networking.gke.io.networks/rdma-5: "0"
-              networking.gke.io.networks/rdma-6: "0"
-              networking.gke.io.networks/rdma-7: "0"
+              networking.gke.io.networks/rdma-0: "1"
+              networking.gke.io.networks/rdma-1: "1"
+              networking.gke.io.networks/rdma-2: "1"
+              networking.gke.io.networks/rdma-3: "1"
+              networking.gke.io.networks/rdma-4: "1"
+              networking.gke.io.networks/rdma-5: "1"
+              networking.gke.io.networks/rdma-6: "1"
+              networking.gke.io.networks/rdma-7: "1"

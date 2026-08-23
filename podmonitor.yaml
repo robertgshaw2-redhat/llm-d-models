@@ -27,3 +27,93 @@ spec:
     - port: modelserver
       path: /metrics
       interval: 5s
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: decode-podmonitor
+  labels:
+    llm-d.ai/role: decode
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/role: decode
+  podMetricsEndpoints:
+    - port: modelserver
+      path: /metrics
+      interval: 5s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: decode-dp-podmonitor
+  labels:
+    llm-d.ai/role: decode
+    llm-d.ai/dp: "true"
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/role: decode
+      llm-d.ai/dp: "true"
+  podMetricsEndpoints:
+    - port: vllm-rank0
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank1
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank2
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank3
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank4
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank5
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank6
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank7
+      path: /metrics
+      interval: 5s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: prefill-dp-podmonitor
+  labels:
+    llm-d.ai/role: prefill
+    llm-d.ai/dp: "true"
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/role: prefill
+      llm-d.ai/dp: "true"
+  podMetricsEndpoints:
+    - port: vllm-rank0
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank1
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank2
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank3
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank4
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank5
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank6
+      path: /metrics
+      interval: 5s
+    - port: vllm-rank7
+      path: /metrics
+      interval: 5s

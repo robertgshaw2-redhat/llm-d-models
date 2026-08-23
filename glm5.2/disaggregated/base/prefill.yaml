@@ -1,11 +1,12 @@
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
-  name: glm5.2-decode
+  name: glm-prefill
   labels:
     llm-d.ai/guide: glm5.2-disagg
     llm-d.ai/model: glm5.2
     llm-d.ai/role: prefill
+    llm-d.ai/dp: "true"
 spec:
   replicas: 1
   leaderWorkerTemplate:
@@ -16,10 +17,11 @@ spec:
           llm-d.ai/guide: glm5.2-disagg
           llm-d.ai/model: glm5.2
           llm-d.ai/role: prefill
+          llm-d.ai/dp: "true"
       spec:
         containers:
           - name: vllm
-            image: docker.io/vllm/vllm-openai:nightly
+            image: docker.io/vllm/vllm-openai:v0.27.0
             securityContext:
               capabilities:
                 add:
@@ -37,14 +39,9 @@ spec:
                 # https://github.com/llm-d/llm-d/issues/352
                 find /dev/shm -type f -delete
 
-                #################
-                # RUN vLLM prefill workers via DP Supervisor
-                # The supervisor automatically assigns CUDA_VISIBLE_DEVICES and
-                # --data-parallel-rank to each child process based on local_rank.
-                #################
-
                 START_RANK=$(( ${LWS_WORKER_INDEX:-0} * DP_SIZE_LOCAL ))
-                MAX_BATCHED_TOKENS=$(( MAX_SEQS * (SPEC_TOKENS + 1) ))
+
+                uv pip install --system instanttensor
                 
                 exec vllm serve \
                   RedHatAI/GLM-5.2-NVFP4-FP8 \
@@ -56,19 +53,19 @@ spec:
                   --tensor-parallel-size $TP_SIZE \
                   --max-num-seqs ${MAX_SEQS} \
                   --max-num-batched-tokens ${MAX_BATCHED_TOKENS} \
-                  --long-prefill-token-threshold ${LONG_PREFILL_TOKEN_THRESHOLD} \ 
+                  --long-prefill-token-threshold ${LONG_PREFILL_TOKEN_THRESHOLD} \
                   --data-parallel-start-rank $START_RANK \
                   --data-parallel-size $((LWS_GROUP_SIZE * DP_SIZE_LOCAL)) \
                   --data-parallel-size-local $DP_SIZE_LOCAL \
                   --data-parallel-address ${LWS_LEADER_ADDRESS} \
                   --kv_transfer_config '{"kv_connector":"NixlConnector",
-                                          "kv_role":"kv_consumer",
+                                          "kv_role":"kv_producer",
                                           "kv_load_failure_policy":"fail"}' \
                   --all2all-backend flashinfer_nvlink_one_sided \
                   --kv-cache-dtype fp8 \
                   --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
-                  --cc.cudagraph_mode NONE \
-                  --load-format instantensor
+                  --compilation-config.cudagraph_mode=none \
+                  --load-format instanttensor
             env:
               - name: HF_TOKEN
                 valueFrom:

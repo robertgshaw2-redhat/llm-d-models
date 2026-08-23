@@ -1,6 +1,6 @@
 
 # Deploy:
-#   helm upgrade --install kimik3 oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f kimik3/disaggregated/router.values.yaml
+#   helm upgrade --install glm5.2 oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f kimik3/disaggregated/router.values.yaml
 router:
   epp:
     replicas: 1
