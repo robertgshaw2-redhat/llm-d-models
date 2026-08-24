@@ -4,19 +4,19 @@
   "metadata": {
     "name": "adnljx9",
     "namespace": "default",
-    "uid": "7ce7b3fc-123e-470f-af07-d59129a6c7c2",
-    "resourceVersion": "1787178636367012",
-    "generation": 3,
-    "creationTimestamp": "2026-08-19T01:07:44Z",
+    "uid": "49b57a53-da65-4699-a76d-2dc820a74123",
+    "resourceVersion": "1787585870300017",
+    "generation": 2,
+    "creationTimestamp": "2026-08-24T14:28:49Z",
     "labels": {
-      "grafana.app/deprecatedInternalID": "211742929629184"
+      "grafana.app/deprecatedInternalID": "2225283281162240"
     },
     "annotations": {
-      "grafana.app/createdBy": "user:afvcrlnkbsk5ca",
+      "grafana.app/createdBy": "user:efw24culiai2ob",
       "grafana.app/folder": "",
-      "grafana.app/saved-from-ui": "Grafana v13.1.0 (b309c9bb3b)",
-      "grafana.app/updatedBy": "user:afvcrlnkbsk5ca",
-      "grafana.app/updatedTimestamp": "2026-08-19T22:30:36Z"
+      "grafana.app/saved-from-ui": "Grafana v13.0.1+security-01 (9bbe672d)",
+      "grafana.app/updatedBy": "user:efw24culiai2ob",
+      "grafana.app/updatedTimestamp": "2026-08-24T15:37:50Z"
     }
   },
   "spec": {
@@ -171,7 +171,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -300,7 +300,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "heatmap",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -414,7 +414,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "heatmap",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -525,7 +525,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -653,7 +653,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -769,6 +769,28 @@
                     "refId": "A",
                     "hidden": false
                   }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:prefix_cache_hits_total{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))\n/\nsum(rate(vllm:prefix_cache_queries_total{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "Avg",
+                        "range": true
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
                 }
               ],
               "transformations": [],
@@ -780,7 +802,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -855,7 +877,32 @@
                     }
                   }
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "__systemRef": "hideSeriesFrom",
+                    "matcher": {
+                      "id": "byNames",
+                      "options": {
+                        "mode": "exclude",
+                        "names": [
+                          "Avg"
+                        ],
+                        "prefix": "All except:",
+                        "readOnly": true
+                      }
+                    },
+                    "properties": [
+                      {
+                        "id": "custom.hideFrom",
+                        "value": {
+                          "legend": false,
+                          "tooltip": true,
+                          "viz": true
+                        }
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -950,135 +997,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
-            "spec": {
-              "options": {
-                "annotations": {
-                  "clustering": -1,
-                  "multiLane": false
-                },
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "enableFacetedFilter": false,
-                  "overflow": "ellipsis",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "hideZeros": false,
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "unit": "none",
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "value": 0,
-                        "color": "green"
-                      },
-                      {
-                        "value": 80,
-                        "color": "red"
-                      }
-                    ]
-                  },
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisBorderShow": false,
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "barWidthFactor": 0.6,
-                    "drawStyle": "line",
-                    "fillOpacity": 0,
-                    "gradientMode": "none",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "insertNulls": false,
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 5,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "showValues": false,
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  }
-                },
-                "overrides": []
-              }
-            }
-          }
-        }
-      },
-      "panel-22": {
-        "kind": "Panel",
-        "spec": {
-          "id": 22,
-          "title": "Prefix Cache Hit Rate",
-          "description": "",
-          "links": [],
-          "data": {
-            "kind": "QueryGroup",
-            "spec": {
-              "queries": [
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "query": {
-                      "kind": "DataQuery",
-                      "group": "prometheus",
-                      "version": "v0",
-                      "datasource": {
-                        "name": "${DS_PROMETHEUS}"
-                      },
-                      "spec": {
-                        "disableTextWrap": false,
-                        "editorMode": "code",
-                        "expr": "sum(rate(vllm:prefix_cache_hits_total{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))\n/\nsum(rate(vllm:prefix_cache_queries_total{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))",
-                        "fullMetaSearch": false,
-                        "includeNullMetadata": true,
-                        "instant": false,
-                        "legendFormat": "Cache Hit Rate",
-                        "range": true,
-                        "useBackend": false
-                      }
-                    },
-                    "refId": "A",
-                    "hidden": false
-                  }
-                }
-              ],
-              "transformations": [],
-              "queryOptions": {
-                "interval": "15s"
-              }
-            }
-          },
-          "vizConfig": {
-            "kind": "VizConfig",
-            "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1206,7 +1125,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1333,7 +1252,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1560,7 +1479,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1677,6 +1596,28 @@
                     "refId": "A",
                     "hidden": false
                   }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_sum{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))\n/\nsum(rate(vllm:request_prefill_kv_computed_tokens_count{model_name=~\"$model_name\",namespace=~\"$namespace\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "Avg Uncached",
+                        "range": true
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
                 }
               ],
               "transformations": [],
@@ -1688,7 +1629,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1769,6 +1710,263 @@
           }
         }
       },
+      "panel-28": {
+        "kind": "Panel",
+        "spec": {
+          "id": 28,
+          "title": "Requests by Num Uncached Toks/Sec",
+          "description": "Number of tokens processed per second",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"500.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "<500",
+                        "range": true
+                      }
+                    },
+                    "refId": "F",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "disableTextWrap": false,
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"1000.0\"}[$__rate_interval]))\n- \nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"500.0\"}[$__rate_interval]))",
+                        "fullMetaSearch": false,
+                        "includeNullMetadata": false,
+                        "instant": false,
+                        "legendFormat": "500-1k",
+                        "range": true,
+                        "useBackend": false
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"2000.0\"}[$__rate_interval]))\n-\nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"1000.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "1k-2k",
+                        "range": true
+                      }
+                    },
+                    "refId": "E",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"10000.0\"}[$__rate_interval]))\n-\nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"2000.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "2k-10k",
+                        "range": true
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"20000.0\"}[$__rate_interval]))\n-\nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"10000.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "10k-20k",
+                        "range": true
+                      }
+                    },
+                    "refId": "C",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"100000.0\"}[$__rate_interval]))\n-\nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"20000.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": "20k-100k",
+                        "range": true
+                      }
+                    },
+                    "refId": "D",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "${DS_PROMETHEUS}"
+                      },
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"+Inf\"}[$__rate_interval]))\n-\nsum(rate(vllm:request_prefill_kv_computed_tokens_bucket{model_name=~\"$model_name\",namespace=~\"$namespace\",le=\"100000.0\"}[$__rate_interval]))",
+                        "instant": false,
+                        "legendFormat": ">100k",
+                        "range": true
+                      }
+                    },
+                    "refId": "G",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {
+                "interval": "5s"
+              }
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.0.1+security-01",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      },
+                      {
+                        "value": 80,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.6,
+                    "drawStyle": "line",
+                    "fillOpacity": 31,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "normal"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
       "panel-3": {
         "kind": "Panel",
         "spec": {
@@ -1814,7 +2012,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -1936,7 +2134,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -2164,7 +2362,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -2292,7 +2490,7 @@
           "vizConfig": {
             "kind": "VizConfig",
             "group": "timeseries",
-            "version": "13.1.0",
+            "version": "13.0.1+security-01",
             "spec": {
               "options": {
                 "annotations": {
@@ -2316,6 +2514,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "none",
+                  "max": 200,
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2387,7 +2586,7 @@
               "height": 8,
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-22"
+                "name": "panel-28"
               }
             }
           },

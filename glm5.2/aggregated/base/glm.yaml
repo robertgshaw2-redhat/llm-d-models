@@ -1,71 +1,67 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: inkling
+  name: glm
   labels:
-    llm-d.ai/guide: inkling-agg
-    llm-d.ai/model: inkling
+    llm-d.ai/guide: glm5.2-agg
+    llm-d.ai/model: glm5.2
     llm-d.ai/role: decode
 spec:
   replicas: 2
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      llm-d.ai/guide: inkling-agg
-      llm-d.ai/model: inkling
+      llm-d.ai/guide: glm5.2-agg
+      llm-d.ai/model: glm5.2
       llm-d.ai/role: decode
   template:
     metadata:
       labels:
-        llm-d.ai/guide: inkling-agg
-        llm-d.ai/model: inkling
+        llm-d.ai/guide: glm5.2-agg
+        llm-d.ai/model: glm5.2
         llm-d.ai/role: decode
     spec:
       containers:
         - name: modelserver
-          image: vllm/vllm-openai:nightly
+          image: docker.io/vllm/vllm-openai:v0.27.0
           imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - |-
               set -euo pipefail
 
-              # Inkling serving path: both are required, and DS is the conv
-              # state layout for the model's sconv layers.
               export VLLM_USE_V2_MODEL_RUNNER=1
-              export VLLM_SSM_CONV_STATE_LAYOUT=DS
-              export FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED=1
+              export MAX_CG_SIZE=$(( MAX_NUM_SEQS * (SPEC_TOKENS + 1) ))
+              uv pip install --system instanttensor
 
               exec vllm serve "${MODEL}" \
                 --port 8000 \
                 --disable-access-log-for-endpoints=/health,/metrics,/v1/models \
-                --trust-remote-code \
-                --tokenizer-mode inkling \
-                --reasoning-parser inkling \
-                --tool-call-parser inkling \
-                --enable-auto-tool-choice \
                 --max-num-seqs "${MAX_NUM_SEQS}" \
                 --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
+                --max-cudagraph-capture-size "${MAX_CG_SIZE}" \
                 --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD}" \
                 --tensor-parallel-size 8 \
                 --enable-expert-parallel \
                 --moe-backend "${MOE_BACKEND}" \
-                --no-enable-flashinfer-autotune \
                 --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
-                --gpu-memory-utilization 0.85
+                --kv-cache-dtype fp8 \
+                --load-format instanttensor
                 
           env:
             - name: MODEL
-              value: "thinkingmachines/Inkling-NVFP4"
+              value: "RedHatAI/GLM-5.2-NVFP4-FP8"
             - name: MOE_BACKEND
               value: "auto"
             - name: MAX_NUM_SEQS
-              value: "128"
+              value: "64"
             - name: MAX_NUM_BATCHED_TOKENS
               value: "8192"
             - name: LONG_PREFILL_TOKEN_THRESHOLD
               value: "4096"
             - name: SPEC_TOKENS
-              value: "8"
+              value: "3"
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -138,10 +134,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: inkling-svc
+  name: glm-svc
 spec:
   selector:
-    llm-d.ai/guide: inkling-agg
+    llm-d.ai/guide: glm5.2-agg
   ports:
     - name: http
       port: 80

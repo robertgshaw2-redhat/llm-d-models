@@ -1,17 +1,20 @@
 # AIPerf AgentX-MVP benchmark against the running llm-d optimized-baseline deployment.
 #
 
-namespace := env_var_or_default("NAMESPACE", "robshaw-dev")
+# namespace := env_var_or_default("NAMESPACE", "robshaw-dev")
+namespace := env_var_or_default("NAMESPACE", "default")
 deploy    := "aiperf-agentx"
 # model     := env_var_or_default("MODEL", "moonshotai/Kimi-K3")
-# model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
+model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
 # model     := env_var_or_default("MODEL", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4")
 # model     := env_var_or_default("MODEL", "RedHatAI/GLM-5.2-NVFP4-FP8")
-model     := env_var_or_default("MODEL", "ibm-granite/granite-4.0-h-small")
+# model     := env_var_or_default("MODEL", "ibm-granite/granite-4.0-h-small")
 # url       := env_var_or_default("URL", "http://kimik3-epp:80")
-# url       := env_var_or_default("URL", "http://inkling-epp:80")
+# url       := env_var_or_default("URL", "http://glm-epp:80")
+# url       := env_var_or_default("URL", "http://glm-agg-epp:80")
+url       := env_var_or_default("URL", "http://inkling-epp:80")
 # url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
-url       := env_var_or_default("URL", "http://granite-epp:80")
+# url       := env_var_or_default("URL", "http://granite-epp:80")
 # url       := env_var_or_default("URL", "http://granite4-small-agg-svc:80")
 duration  := "300"
 
@@ -19,7 +22,7 @@ duration  := "300"
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-deployment := "granite"
+deployment := "glm"
 
 default:
     @just --list
@@ -52,6 +55,7 @@ run concurrency duration=duration:
         --concurrency {{concurrency}} \
         --benchmark-duration {{duration}} \
         --output-artifact-dir /workspace/artifacts \
+        --no-server-metrics \
         --ui simple
 
 # Fast plumbing validation (~60s). Uses --unsafe-override so it runs below the
@@ -63,7 +67,7 @@ smoke concurrency:
         --unsafe-override \
         --url {{url}} \
         --model {{model}} \
-        --max-context-length 128000 \
+        --max-context-length 256000 \
         --endpoint-type chat \
         --streaming \
         --use-server-token-count \
@@ -72,6 +76,7 @@ smoke concurrency:
         --concurrency {{concurrency}} \
         --benchmark-duration {{duration}} \
         --output-artifact-dir /workspace/artifacts \
+        --no-server-metrics \
         --ui simple
 
 # Sweep over a range of concurrency values using the smoke config (fast, marks
@@ -107,7 +112,7 @@ bench isl="10000" osl="1" concurrency="16" num_prompts="":
     #!/usr/bin/env bash
     set -euo pipefail
     num_prompts="{{num_prompts}}"
-    if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 10 )); fi
+    if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 2 )); fi
     echo "==> ISL={{isl}} OSL={{osl}} CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
     echo "{{namespace}}"
     kubectl exec -n {{namespace}} deploy/{{deployment}} -- \

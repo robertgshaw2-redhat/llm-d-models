@@ -3,20 +3,21 @@ kind: Kustomization
 
 resources:
   - ../base
-
+  
 components:
   - ../../../components/gke-node-cache
   - ../../../components/gke-nccl-plugins
 
+
 patches:
   - target:
       kind: Deployment
-      name: inkling
+      name: glm
     patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: inkling
+        name: glm
       spec:
         template:
           spec:
@@ -24,6 +25,6 @@ patches:
               - name: modelserver
                 env:
                   - name: MODEL
-                    value: thinkingmachines/Inkling-NVFP4
+                    value: RedHatAI/GLM-5.2-NVFP4-FP8
                   - name: MOE_BACKEND
                     value: "auto"
