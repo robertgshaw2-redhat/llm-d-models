@@ -1,0 +1,42 @@
+# The LeaderWorkerSet form of infiniband.yaml -- same `rdma/ib` request and the
+# same two HCA-prefix vars; only the shape of the patch differs.
+#
+# LeaderWorkerSet is a CRD, so kustomize has no schema for it and cannot merge a
+# container list by name the way it does for the Deployment next door -- a
+# strategic merge patch degrades to a whole-list replace. Hence JSON 6902 by list
+# index, and hence the `test` op: it assumes the vLLM container is containers[0]
+# (the routing-proxy sidecar sits in initContainers, so it does not shift the
+# index), and fails the build rather than patching the wrong container if a base
+# is ever reordered or renames it.
+#
+# Only workerTemplate is patched. No base here sets leaderTemplate, so LWS
+# defaults it to the worker template and both get the request.
+#
+# The env vars are appended with `/env/-` rather than replaced by index, so they
+# do not depend on the base's env ordering. That means a base that already sets
+# either name would end up with a duplicate entry (last wins in the kubelet) --
+# no base does today; add a `test` op here if one ever needs to.
+- op: test
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/name
+  value: vllm
+
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/-
+  value:
+    name: NCCL_IB_HCA
+    value: "ibp"
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/-
+  value:
+    name: NVSHMEM_HCA_PREFIX
+    value: "ibp"
+
+# Both bases already declare resources.limits and resources.requests, so these
+# add a key to an existing map. `~1` is the JSON Pointer escape for the `/` in
+# `rdma/ib`.
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/limits/rdma~1ib
+  value: "1"
+- op: add
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/resources/requests/rdma~1ib
+  value: "1"
