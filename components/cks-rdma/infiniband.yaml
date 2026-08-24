@@ -1,13 +1,17 @@
 # CoreWeave InfiniBand. `rdma/ib` is the extended resource the cluster's RDMA
 # device plugin advertises -- without the request the pod gets no IB device and
 # NIXL falls back to TCP for the P/D KV transfer. NCCL_IB_HCA=ibp selects the IB
-# HCAs by their interface-name prefix on these nodes.
+# HCAs by their interface-name prefix on these nodes, and NVSHMEM_HCA_PREFIX
+# does the same for NVSHMEM (used by DeepEP's kernels).
 #
 # The container is matched by name: `modelserver`, which is what every
 # Deployment-based vLLM base in this repo calls it. A base naming it something
-# else (the LWS bases use `vllm`) would have this *appended* as a second
-# container rather than merged, so keep the name in step -- kustomize has no way
-# to assert it for a strategic merge patch.
+# else would have this *appended* as a second container rather than merged, so
+# keep the name in step -- kustomize has no way to assert it for a strategic
+# merge patch.
+#
+# infiniband-lws.yaml is the LeaderWorkerSet form of this patch (where the
+# container is named `vllm`). Change the two together.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +23,8 @@ spec:
         - name: modelserver
           env:
             - name: NCCL_IB_HCA
+              value: "ibp"
+            - name: NVSHMEM_HCA_PREFIX
               value: "ibp"
           resources:
             limits:

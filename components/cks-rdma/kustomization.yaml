@@ -1,4 +1,5 @@
-# CoreWeave InfiniBand for every Deployment in the consuming overlay.
+# CoreWeave InfiniBand for every Deployment and LeaderWorkerSet in the consuming
+# overlay.
 #
 # Model-agnostic, like ../coreweave-node-cache, and used the same way -- the two
 # are the only cluster-specific facts a CoreWeave overlay needs:
@@ -9,10 +10,15 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
 # Untargeted by name, so prefill and decode both pick it up (and a third role
-# added to a base gets it for free). Strategic merge rather than JSON 6902:
-# Deployment is a built-in kustomize has a schema for, so the containers list
-# merges by name instead of being replaced.
+# added to a base gets it for free). Strategic merge rather than JSON 6902 for
+# the Deployment: it is a built-in kustomize has a schema for, so the containers
+# list merges by name instead of being replaced. LeaderWorkerSet is a CRD with no
+# such schema, so it gets the JSON 6902 form in infiniband-lws.yaml -- keep the
+# two in step.
 patches:
   - path: infiniband.yaml
     target:
       kind: Deployment
+  - path: infiniband-lws.yaml
+    target:
+      kind: LeaderWorkerSet

@@ -78,6 +78,7 @@ spec:
               - |-
                 START_RANK=$(( ${LWS_WORKER_INDEX:-0} * DP_SIZE_LOCAL ))
                 MAX_BATCHED_TOKENS=$(( MAX_SEQS * (SPEC_TOKENS + 1) ))
+                export VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0
 
                 uv pip install --system instanttensor
                 
@@ -103,7 +104,8 @@ spec:
                   --moe-backend "${MOE_BACKEND}" \
                   --kv-cache-dtype fp8 \
                   --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
-                  --load-format instanttensor
+                  --load-format instanttensor \
+                  --gpu-memory-utilization 0.95
             env:
               - name: HF_TOKEN
                 valueFrom:
@@ -122,7 +124,7 @@ spec:
               - name: SPEC_TOKENS
                 value: "3"
               - name: MAX_SEQS
-                value: "64"
+                value: "8"
               - name: DP_SIZE_LOCAL
                 value: "8"
               - name: TP_SIZE
