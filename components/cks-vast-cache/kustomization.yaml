@@ -1,0 +1,22 @@
+# Points the `hf-cache` volume at the namespace's shared VAST claim
+# (hf-cache-vast), instead of the node-local NVMe that ../cks-node-cache uses.
+#
+# The claim itself is not created here -- it comes from
+# ../../cache-warmer/cks-vast, which also downloads the weights into it. Apply
+# that first, or the pods block on an unbound claim.
+#
+# Mutually exclusive with ../cks-node-cache: both patch the same volume, and
+# whichever component is listed last wins, silently.
+#
+# Pull it into an overlay with:
+#   components:
+#     - ../../../components/cks-vast-cache
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Untargeted by name, same as ../cks-node-cache: every Deployment in the
+# consuming overlay gets the patch (prefill + decode for a disaggregated pair).
+patches:
+  - path: vast-cache.yaml
+    target:
+      kind: Deployment

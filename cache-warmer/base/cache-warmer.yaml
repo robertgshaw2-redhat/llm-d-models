@@ -53,7 +53,8 @@ spec:
           env:
             # Set by the overlay -- each cluster serves a different model.
             - name: MODEL_ID
-              value: "RedHatAI/GLM-5.2-NVFP4-FP8"
+              value: "zai-org/GLM-5.2-FP8"
+              # value: "RedHatAI/GLM-5.2-NVFP4-FP8"
             # The mount path, identical everywhere; only the host path behind it
             # is cluster-specific. Must match HF_HUB_CACHE in the vLLM bases so
             # they find the weights on the same cache layout.

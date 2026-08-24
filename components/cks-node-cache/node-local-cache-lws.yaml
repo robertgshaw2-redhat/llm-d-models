@@ -1,0 +1,38 @@
+# The LeaderWorkerSet form of node-local-cache.yaml -- same two hostPaths, same
+# reasoning; only the shape of the patch differs.
+#
+# LeaderWorkerSet is a CRD, so kustomize has no schema for it and cannot merge a
+# volume list by name the way it does for the Deployment next door -- a strategic
+# merge patch degrades to a whole-list replace. Hence JSON 6902 by list index,
+# and hence the `test` ops: they assume every LWS base declares volumes in the
+# order [dshm, hf-cache, jit-cache, ...], and fail the build rather than silently
+# repointing the wrong volume if a base is ever reordered.
+#
+# Only workerTemplate is patched. No base here sets leaderTemplate, so LWS
+# defaults it to the worker template and both get the hostPaths.
+#
+# Replacing the whole entry rather than merging into it is deliberate: a volume
+# may carry only one source, so the base's emptyDir has to go before hostPath can
+# take its place.
+- op: test
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/volumes/1/name
+  value: hf-cache
+- op: test
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/volumes/2/name
+  value: jit-cache
+
+- op: replace
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/volumes/1
+  value:
+    name: hf-cache
+    hostPath:
+      path: /mnt/local/hf-cache
+      type: DirectoryOrCreate
+
+- op: replace
+  path: /spec/leaderWorkerTemplate/workerTemplate/spec/volumes/2
+  value:
+    name: jit-cache
+    hostPath:
+      path: /mnt/local/jit-cache
+      type: DirectoryOrCreate

@@ -10,7 +10,7 @@ metadata:
 spec:
   replicas: 1
   leaderWorkerTemplate:
-    size: 1
+    size: 2
     workerTemplate:
       metadata:
         labels:
@@ -36,16 +36,12 @@ spec:
               - -c
             args:
               - |-
-                # Clear /dev/shm on start to prevent running out of space when crashes occur
-                # https://github.com/llm-d/llm-d/issues/352
-                find /dev/shm -type f -delete
-
                 START_RANK=$(( ${LWS_WORKER_INDEX:-0} * DP_SIZE_LOCAL ))
 
                 uv pip install --system instanttensor
                 
                 exec vllm serve \
-                  RedHatAI/GLM-5.2-NVFP4-FP8 \
+                  "${MODEL}" \
                   --port 8000 \
                   --disable-access-log-for-endpoints=/health,/metrics \
                   --data-parallel-multi-port-external-lb \
@@ -62,7 +58,8 @@ spec:
                   --kv_transfer_config '{"kv_connector":"NixlConnector",
                                           "kv_role":"kv_producer",
                                           "kv_load_failure_policy":"fail"}' \
-                  --all2all-backend flashinfer_nvlink_one_sided \
+                  --all2all-backend "${A2A_BACKEND}" \
+                  --moe-backend "${MOE_BACKEND}" \
                   --kv-cache-dtype fp8 \
                   --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
                   --compilation-config.cudagraph_mode=none \
@@ -73,6 +70,15 @@ spec:
                   secretKeyRef:
                     name: llm-d-hf-token
                     key: HF_TOKEN
+              - name: MODEL
+                value: "zai-org/GLM-5.2-FP8"
+                # value: "RedHatAI/GLM-5.2-NVFP4-FP8"
+              - name: A2A_BACKEND
+                value: "deepep_high_throughput"
+                # value: "flashinfer_nvlink_one_sided"
+              - name: MOE_BACKEND
+                value: "deep_gemm"
+                # value: "auto"
               - name: SPEC_TOKENS
                 value: "1"
               - name: MAX_SEQS

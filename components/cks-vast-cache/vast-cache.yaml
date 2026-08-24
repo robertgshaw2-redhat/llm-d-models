@@ -1,0 +1,27 @@
+# Repoints `hf-cache` at the shared VAST claim the cache-warmer Job fills.
+#
+# `jit-cache` deliberately stays as the base's emptyDir: the vLLM/torch JIT cache
+# is written by every pod at startup and is compiled per GPU/driver combination,
+# so putting it on a shared filesystem means concurrent writers scribbling over
+# each other's kernels for no reuse. Only the weights, which are read-only after
+# the download, belong on shared storage.
+#
+# `emptyDir: null` deletes the base's per-pod scratch: a volume may only have one
+# source, so it has to go before the claim can take its place.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER # replaced by the patch target selector
+spec:
+  template:
+    spec:
+      volumes:
+        - name: hf-cache
+          emptyDir: null
+          persistentVolumeClaim:
+            claimName: hf-cache-vast
+            # Nothing in a serving pod should be writing into the cache -- if a
+            # model was missed by the warmer, the pod failing to find it is a
+            # better outcome than every replica racing to download it onto a
+            # shared mount.
+            readOnly: true

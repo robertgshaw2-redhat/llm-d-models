@@ -6,6 +6,9 @@
 #
 # `emptyDir: null` deletes the base's per-pod scratch: a volume may only have one
 # source, so it has to go before hostPath can take its place.
+#
+# node-local-cache-lws.yaml is the LeaderWorkerSet form of this patch, with the
+# same paths. Change the two together.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
