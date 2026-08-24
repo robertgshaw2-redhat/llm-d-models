@@ -16,13 +16,13 @@ url       := env_var_or_default("URL", "http://inkling-epp:80")
 # url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
 # url       := env_var_or_default("URL", "http://granite-epp:80")
 # url       := env_var_or_default("URL", "http://granite4-small-agg-svc:80")
-duration  := "300"
+duration  := "900"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-deployment := "glm"
+deployment := "inkling"
 
 default:
     @just --list
@@ -67,7 +67,6 @@ smoke concurrency:
         --unsafe-override \
         --url {{url}} \
         --model {{model}} \
-        --max-context-length 256000 \
         --endpoint-type chat \
         --streaming \
         --use-server-token-count \
@@ -78,6 +77,7 @@ smoke concurrency:
         --output-artifact-dir /workspace/artifacts \
         --no-server-metrics \
         --ui simple
+# --max-context-length 256000 \
 
 # Sweep over a range of concurrency values using the smoke config (fast, marks
 # results invalid via --unsafe-override). Args: [duration-seconds].

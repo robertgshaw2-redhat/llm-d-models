@@ -30,7 +30,7 @@ router:
           - type: inflight-load-producer
           - type: prefix-cache-affinity-filter
             parameters:
-              peakPrefillThroughput: 30000
+              peakPrefillThroughput: 50000
           - type: token-load-scorer
           - type: max-score-picker
         schedulingProfiles:

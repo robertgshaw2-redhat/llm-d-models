@@ -24,19 +24,20 @@ spec:
     spec:
       containers:
         - name: modelserver
-          image: vllm/vllm-openai:nightly
+          image: vllm/vllm-openai:v0.24.0
           imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - |-
               set -euo pipefail
 
-              export VLLM_USE_V2_MODEL_RUNNER=1
+              export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=0
 
               exec vllm serve "${MODEL}" \
                 --port 8000 \
                 --disable-access-log-for-endpoints=/health,/metrics,/v1/models \
-                --prefix-match-unit 16
+                --enable-prefix-caching \
+                --mamba-cache-mode=align
           env:
             - name: MODEL
               value: "ibm-granite/granite-4.0-h-small"
@@ -48,8 +49,6 @@ spec:
               value: "8192"
             - name: LONG_PREFILL_TOKEN_THRESHOLD
               value: "4096"
-            - name: SPEC_TOKENS
-              value: "8"
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
