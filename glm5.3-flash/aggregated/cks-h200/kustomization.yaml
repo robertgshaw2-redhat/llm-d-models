@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+  
+components:
+  - ../../../components/cks-node-cache
+  - ../../../components/cks-rdma
+
+
+patches:
+  - target:
+      kind: Deployment
+      name: glm
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: glm
+      spec:
+        template:
+          spec:
+            containers:
+              - name: modelserver
+                env:
+                  - name: MODEL
+                    value: "glm5.3-flash-agg"
+                  - name: MOE_BACKEND
+                    value: "auto"

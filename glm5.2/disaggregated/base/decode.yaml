@@ -61,7 +61,7 @@ spec:
               runAsNonRoot: true
         containers:
           - name: vllm
-            image: docker.io/vllm/vllm-openai:v0.27.0
+            image: docker.io/vllm/vllm-openai:nightly
             securityContext:
               capabilities:
                 add:
@@ -69,7 +69,7 @@ spec:
                   - SYS_RAWIO
               runAsGroup: 0
               runAsUser: 0
-              privileged: true
+              # privileged: true
             imagePullPolicy: Always
             command:
               - /bin/bash
@@ -78,11 +78,46 @@ spec:
               - |-
                 START_RANK=$(( ${LWS_WORKER_INDEX:-0} * DP_SIZE_LOCAL ))
                 MAX_BATCHED_TOKENS=$(( MAX_SEQS * (SPEC_TOKENS + 1) ))
-                export VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0
 
                 uv pip install --system instanttensor
+
+                export BOOTSTRAP_NIXL=1
+                if [[ "${BOOTSTRAP_NIXL}" == "1" ]]; then
+                  (uv pip install --system nixl nixl-cu13 \
+                    || pip install --no-cache-dir nixl nixl-cu13)
+                fi
                 
-                exec vllm serve \
+                # Nsight Systems is not in the vllm-openai image, but the CUDA apt
+                # repo it ships is. ~1GB, so this adds a couple of minutes to a
+                # cold start; bake nsys into the image to avoid paying it.
+                NSYS_VERSION=2026.1.3
+                if ! command -v nsys >/dev/null; then
+                  (apt-get update -qq \
+                    && apt-get install -y -qq --no-install-recommends "nsight-systems-${NSYS_VERSION}") \
+                    || echo "WARN: nsys install failed; serving without the Nsight wrapper"
+                  export PATH="/opt/nvidia/nsight-systems/${NSYS_VERSION}/bin:${PATH}"
+                fi
+
+                # --trace-fork-before-exec only sees workers that are exec'd.
+                export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+                # nsys sits idle until --profiler-config.profiler=cuda calls
+                # cudaProfilerStart on /start_profile, records max_iterations engine
+                # steps, then stops. Empty array = serve unwrapped if nsys is missing.
+                NSYS=()
+                if command -v nsys >/dev/null; then
+                  NSYS=(nsys profile
+                    --trace=cuda,nvtx,nccl
+                    --cuda-graph-trace=node
+                    --sample=none
+                    --cpuctxsw=none
+                    --trace-fork-before-exec=true
+                    --capture-range=cudaProfilerApi
+                    --capture-range-end=repeat:1:sync
+                    -o /profiles/vllm_%h_%p)
+                fi
+
+                exec "${NSYS[@]}" vllm serve \
                   "${MODEL}" \
                   --port 8200 \
                   --disable-access-log-for-endpoints=/health,/metrics \
@@ -103,9 +138,13 @@ spec:
                   --all2all-backend "${A2A_BACKEND}" \
                   --moe-backend "${MOE_BACKEND}" \
                   --kv-cache-dtype fp8 \
-                  --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
                   --load-format instanttensor \
-                  --gpu-memory-utilization 0.95
+                  --max-model-len 300000 \
+                  --profiler-config.profiler=cuda \
+                  --profiler-config.max_iterations=10 \
+                  --profiler-config.ignore_frontend=true
+
+                  # --speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${SPEC_TOKENS}}" \
             env:
               - name: HF_TOKEN
                 valueFrom:
@@ -128,6 +167,8 @@ spec:
               - name: DP_SIZE_LOCAL
                 value: "8"
               - name: TP_SIZE
+                value: "1"
+              - name: VLLM_RANDOMIZE_DP_DUMMY_INPUTS
                 value: "1"
               - name: VLLM_NIXL_SIDE_CHANNEL_HOST
                 valueFrom:

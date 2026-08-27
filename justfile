@@ -8,24 +8,47 @@ deploy    := "aiperf-agentx"
 # model     := env_var_or_default("MODEL", "thinkingmachines/Inkling-NVFP4")
 # model     := env_var_or_default("MODEL", "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4")
 # model     := env_var_or_default("MODEL", "RedHatAI/GLM-5.2-NVFP4-FP8")
-model     := env_var_or_default("MODEL", "ibm-granite/granite-4.0-h-small")
+# model     := env_var_or_default("MODEL", "granite-4-0-h-small")
+# model     := env_var_or_default("MODEL", "google/gemma-4-31B-it")
+# model     := env_var_or_default("MODEL", "zai-org/GLM-5.2-FP8")
+model     := env_var_or_default("MODEL", "zai-org/GLM-5.3-Flash")
+# model     := env_var_or_default("MODEL", "RedHatAI/GLM-5.2-MXFP4xFP8_BLOCK")
+# tokenizer     := env_var_or_default("TOKENIZER", "ibm-granite/granite-4.0-h-small")
+# tokenizer     := env_var_or_default("TOKENIZER", "google/gemma-4-31B-it")
+tokenizer     := env_var_or_default("TOKENIZER", "zai-org/GLM-5.2-FP8")
+
 # url       := env_var_or_default("URL", "http://kimik3-epp:80")
 # url       := env_var_or_default("URL", "http://glm-epp:80")
 # url       := env_var_or_default("URL", "http://glm-agg-epp:80")
 # url       := env_var_or_default("URL", "http://inkling-epp:80")
 # url       := env_var_or_default("URL", "http://nemotron-ultra-epp:80")
-url       := env_var_or_default("URL", "http://granite-epp:80")
+# url       := env_var_or_default("URL", "http://granite-epp:80")
 # url       := env_var_or_default("URL", "http://granite4-small-agg-svc:80")
-duration  := "300"
+# url       := env_var_or_default("URL", "http://gemma-4-31b-agg:80")
+# url       := env_var_or_default("URL", "http://glm-epp:80")
+url := env_var_or_default("URL", "http://glm-flash-svc:80")
+# url       := env_var_or_default("URL", "https://test.rhai.ibm.com/v1/projects/e0c67991-420e-4136-9ff4-793849bf0ee7/inference")
+duration  := "900"
 
 # The vLLM serving Deployment itself (inkling-small/aggregated/base/), not the
 # runner: `just bench` execs into this pod and drives its own localhost:8000.
 # The model id has to be what that pod actually serves -- `vllm bench serve`
 # sends it as the request body's "model" and loads its tokenizer by that name.
-deployment := "granite"
+deployment := "gemma"
+
+node:
+    kubectl cp script.mjs rhai-gemma-repro:/tmp/repro.mjs
+    kubectl exec rhai-gemma-repro -- \
+        sh -c 'export RHAI_API_KEY=base RHAI_API_BASE={{url}}/v1; node /tmp/repro.mjs'
 
 default:
     @just --list
+
+prof_prefill:
+    kubectl exec -n {{namespace}} glm-prefill-0 -- curl -X POST http://localhost:8000/start_profile
+
+prof_decode:
+    kubectl exec -n {{namespace}} glm-decode-0 -- curl -X POST http://localhost:8200/start_profile
 
 # Apply the manifest and wait for the runner pod to be ready.
 deploy:
@@ -76,9 +99,11 @@ smoke concurrency:
         --benchmark-duration {{duration}} \
         --output-artifact-dir /workspace/artifacts \
         --no-server-metrics \
+        --max-context-length 256000 \
+        --tokenizer {{tokenizer}} \
         --ui simple
 
-# --max-context-length 128000 \
+
 
 # Sweep over a range of concurrency values using the smoke config (fast, marks
 # results invalid via --unsafe-override). Args: [duration-seconds].
@@ -109,17 +134,17 @@ install-lmeval:
     kubectl exec -n {{namespace}} deploy/{{deploy}} -- pip install lm-eval[api] transformers
 
 # 10k ISL / 1 OSL vllm bench serve. Args: [concurrency] [num-prompts].
-bench isl="10000" osl="1" concurrency="16" num_prompts="":
+bench_random isl="1" osl="1000" concurrency="64" num_prompts="256":
     #!/usr/bin/env bash
     set -euo pipefail
     num_prompts="{{num_prompts}}"
     if [[ -z "$num_prompts" ]]; then num_prompts=$(( {{concurrency}} * 2 )); fi
     echo "==> ISL={{isl}} OSL={{osl}} CONCURRENCY={{concurrency}} NUM_PROMPTS=$num_prompts"
     echo "{{namespace}}"
-    kubectl exec -n {{namespace}} deploy/{{deployment}} -- \
+    kubectl exec -n {{namespace}} glm-flash-agg-8cb54f968-fwxh4 -- \
       vllm bench serve \
         --backend vllm \
-        --base-url http://localhost:8000 \
+        --base-url {{url}} \
         --model {{model}} \
         --trust-remote-code \
         --dataset-name random \
@@ -148,6 +173,29 @@ bench_prefix num_prompts="1000" rr="20":
         --prefix-repetition-num-prefixes 10 \
         --prefix-repetition-output-len 500 \
         --seed $(date +%s)
+
+bench_shared num_prompts="1000" concurrency="100":
+    kubectl exec -n {{namespace}} deploy/{{deployment}} -- \
+      vllm bench serve \
+        --backend vllm \
+        --base-url {{url}} \
+        --model {{model}} \
+        --trust-remote-code \
+        --num-prompts {{num_prompts}} \
+        --request-rate inf \
+        --max-concurrency {{concurrency}} \
+        --percentile-metrics ttft,tpot,itl,e2el \
+        --dataset-name prefix_repetition \
+        --prefix-repetition-prefix-len 5000 \
+        --prefix-repetition-suffix-len 5000 \
+        --prefix-repetition-num-prefixes 1 \
+        --prefix-repetition-output-len 500 \
+        --seed $(date +%s)
+
+sweep_shared:
+    just bench_shared 1000 100
+    just bench_shared 2000 200
+    just bench_shared 3000 300
 
 sweep_prefix:
     just bench_prefix 1000 10
@@ -384,3 +432,63 @@ pride-jobs:
 # Delete every GuideLLM Job in the namespace. Local logs are untouched.
 pride-clean:
     kubectl delete job -n {{namespace}} -l app.kubernetes.io/name=guidellm --ignore-not-found
+# ---------------------------------------------------------------------------
+# Nsight Systems traces (glm5.2/disaggregated/base/{prefill,decode}.yaml)
+#
+# Those containers exec vllm under `nsys profile --capture-range=cudaProfilerApi`,
+# so nsys sits idle until `just prof_prefill` / `just prof_decode` hits
+# /start_profile. It then records max_iterations engine steps and writes
+# /profiles/vllm_<host>_<pid>.nsys-rep inside the pod.
+#
+# /profiles is an emptyDir -- a trace not copied out dies with the pod.
+#
+#   just nsys-ls                    # what the pod has written so far
+#   just nsys-fetch                 # copy them here
+#   just nsys-fetch glm-prefill-0   # ... from the prefill pod instead
+#   just nsys-clean                 # free the emptyDir between captures
+# ---------------------------------------------------------------------------
+
+nsys_pod := env_var_or_default("NSYS_POD", "glm-decode-0")
+nsys_dir := env_var_or_default("NSYS_DIR", "./traces-nsys")
+
+# List the traces a serving pod has written. Args: [pod].
+nsys-ls pod=nsys_pod:
+    kubectl exec -n {{namespace}} {{pod}} -- ls -lh /profiles
+
+# Copy every finished .nsys-rep out of a serving pod. Args: [pod] [dest].
+nsys-fetch pod=nsys_pod dest=nsys_dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{dest}}"
+
+    # nsys writes a .qdstrm while capturing and only renames it to .nsys-rep
+    # once the capture is finalized, so a still-recording profile is simply
+    # absent from this list rather than copied out half-written.
+    files=$(kubectl exec -n {{namespace}} {{pod}} -- \
+      sh -c 'ls -1 /profiles/*.nsys-rep 2>/dev/null' || true)
+    if [[ -z "$files" ]]; then
+      echo "!! {{pod}}:/profiles has no .nsys-rep yet"
+      echo "   run 'just prof_decode' (or prof_prefill), then give nsys a few"
+      echo "   seconds to finalize -- 'just nsys-ls {{pod}}' shows the .qdstrm"
+      exit 1
+    fi
+
+    for f in $files; do
+      out="{{dest}}/{{pod}}-$(basename "$f")"
+      if [[ -s "$out" ]]; then
+        echo "==> skip $out (already local)"
+        continue
+      fi
+      echo "==> $f -> $out"
+      # `exec -- cat` rather than `kubectl cp`: cp shells out to tar inside the
+      # container, and each of these is one large binary blob anyway. No -t, so
+      # the stream stays binary-clean.
+      kubectl exec -n {{namespace}} {{pod}} -- cat "$f" > "$out"
+    done
+
+    ls -lh "{{dest}}"
+
+# Delete the traces in a pod's /profiles. Local copies are untouched. Args: [pod].
+nsys-clean pod=nsys_pod:
+    kubectl exec -n {{namespace}} {{pod}} -- \
+      sh -c 'rm -f /profiles/*.nsys-rep /profiles/*.qdstrm; ls -lh /profiles'

@@ -1,0 +1,87 @@
+# GLM-5.2 disaggregated on CoreWeave H200, MXFP4 weights with FP8 activations.
+#
+# Same cluster wiring as ../cks-h200 (node-local cache + RDMA); the only
+# difference is the quantization: a checkpoint with MXFP4 weights / FP8-block
+# activations, the CI image that carries the kernels for it, and the MoE /
+# all2all backends that path needs.
+#
+# LeaderWorkerSet is a CRD, so kustomize has no merge schema for it and a
+# strategic merge would replace whole lists. Hence JSON 6902 by index, and hence
+# the `test` ops: they fail the build rather than silently patching the wrong
+# env var if the base is ever reordered.
+#
+#   kubectl apply -k glm5.2/disaggregated/cks-h200-w-mxfp4-a-fp8 -n default
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+components:
+  - ../../../components/cks-node-cache
+  - ../../../components/cks-rdma
+
+patches:
+  - target:
+      kind: LeaderWorkerSet
+      name: glm-prefill
+    patch: |-
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/name
+        value: vllm
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/image
+        value: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:fcd508d213f97bfaa253a3868c3caedeafc06e71
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/name
+        value: MODEL
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/value
+        value: RedHatAI/GLM-5.2-MXFP4xFP8_BLOCK
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/2/name
+        value: A2A_BACKEND
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/2/value
+        value: deepep_v2
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/3/name
+        value: MOE_BACKEND
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/3/value
+        value: humming
+
+  - target:
+      kind: LeaderWorkerSet
+      name: glm-decode
+    patch: |-
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/name
+        value: vllm
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/image
+        value: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:fcd508d213f97bfaa253a3868c3caedeafc06e71
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/name
+        value: MODEL
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/1/value
+        value: RedHatAI/GLM-5.2-MXFP4xFP8_BLOCK
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/2/name
+        value: A2A_BACKEND
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/2/value
+        value: deepep_v2
+
+      - op: test
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/3/name
+        value: MOE_BACKEND
+      - op: replace
+        path: /spec/leaderWorkerTemplate/workerTemplate/spec/containers/0/env/3/value
+        value: humming

@@ -1,6 +1,6 @@
 
 # Deploy:
-#   helm upgrade --install glm oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n default -f glm5.2/disaggregated/router.values.yaml
+#   helm upgrade --install glm oci://ghcr.io/llm-d/charts/llm-d-router-standalone --version v0.9.0 -n ${NAMESPACE} -f glm5.2/disaggregated/router.values.yaml
 router:
   epp:
     replicas: 1
@@ -38,7 +38,8 @@ router:
           - type: inflight-load-producer
           - type: prefix-cache-affinity-filter
             parameters:
-              peakPrefillThroughput: 20000
+              peakPrefillThroughput: 10000
+              # peakPrefillThroughput: 20000
           - type: token-load-scorer
           - type: active-request-scorer
           - type: max-score-picker
